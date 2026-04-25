@@ -9,8 +9,11 @@
 
 #include <wasmsnapshot.hxx>
 
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <string>
 
 #include <com/sun/star/beans/PropertyValue.hpp>
 #include <com/sun/star/frame/Desktop.hpp>
@@ -39,6 +42,15 @@ namespace wasmshim::detail {
     // duplicate Navigator. Default true (preload runs); JS sets false
     // via wasm_set_preload_disabled before main() if snapshot is killed.
     bool g_preloadDisabled = false;
+
+    // Phase-2 first-doc-painted handshake. wasmshim::firstDocPainted()
+    // signals JS, then blocks on g_phase2CV until JS calls
+    // wasm_first_doc_snapshot_resume(). One-shot: g_phase2Triggered
+    // ensures only the first transition fires the snapshot.
+    std::mutex g_phase2Mutex;
+    std::condition_variable g_phase2CV;
+    bool g_phase2ResumeRequested = false;
+    std::atomic<bool> g_phase2Triggered{false};
 }
 
 namespace wasmshim {
@@ -88,6 +100,47 @@ void preloadDocumentModules(
     }
 }
 
+void firstDocPainted(std::string_view docTypeHint)
+{
+    using namespace std::chrono;
+
+    // One-shot. Atomic CAS ensures only the very first invocation
+    // triggers the snapshot save; later doc opens (cross-module switch
+    // on warm restore, second user file, etc.) are no-ops.
+    bool expected = false;
+    if (!detail::g_phase2Triggered.compare_exchange_strong(expected, true))
+        return;
+
+    // Snapshot the docType into a heap string the EM_ASM payload can
+    // reference safely (it crosses to the JS main thread async).
+    static std::string s_docType;
+    s_docType.assign(docTypeHint.data(), docTypeHint.size());
+
+    MAIN_THREAD_ASYNC_EM_ASM({
+        if (Module && typeof Module.__firstDocLoaded === 'function') {
+            try { Module.__firstDocLoaded(UTF8ToString($0)); }
+            catch (e) { console.error('Module.__firstDocLoaded threw:', e); }
+        } else {
+            console.warn('wasmshim::firstDocPainted: no JS handler installed');
+        }
+    }, s_docType.c_str());
+
+    // Block this thread until JS captures HEAPU8 and calls resume.
+    // 120s ceiling: longer than the conservative Cache.put estimate so
+    // even slow disks don't timeout, but short enough to recover from a
+    // hung JS handler (closed tab, exception during capture).
+    std::unique_lock<std::mutex> lk(detail::g_phase2Mutex);
+    bool ok = detail::g_phase2CV.wait_for(
+        lk, seconds(120),
+        []{ return detail::g_phase2ResumeRequested; });
+    if (!ok)
+    {
+        MAIN_THREAD_ASYNC_EM_ASM({
+            console.warn('wasmshim::firstDocPainted: resume timeout, proceeding');
+        });
+    }
+}
+
 } // namespace wasmshim
 
 extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
@@ -102,6 +155,35 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
 extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_preload_disabled(int disabled)
 {
     wasmshim::detail::g_preloadDisabled = (disabled != 0);
+}
+
+/// JS calls this after capturing HEAPU8 in response to Module.__firstDocLoaded.
+/// Wakes the wasmshim::firstDocPainted() blocked thread.
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_first_doc_snapshot_resume()
+{
+    {
+        std::lock_guard<std::mutex> lk(wasmshim::detail::g_phase2Mutex);
+        wasmshim::detail::g_phase2ResumeRequested = true;
+    }
+    wasmshim::detail::g_phase2CV.notify_all();
+}
+
+/// JS reports a snapshot-save failure. Records the reason in a static for
+/// any future telemetry hook to retrieve, then unblocks the C++ side so
+/// the user's session continues. Reasons (JS-side enum):
+///   1 = JS exception during capture
+///   2 = HEAPU8 unavailable
+///   3 = Cache.put failed
+///   4 = JS-side timeout (e.g. tab backgrounded)
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_failed(int reason)
+{
+    static std::atomic<int> s_lastReason{0};
+    s_lastReason.store(reason);
+    MAIN_THREAD_ASYNC_EM_ASM({
+        console.warn('wasm_snapshot_failed: reason=' + $0);
+    }, reason);
+    // Unblock firstDocPainted's wait if it was the trigger.
+    wasm_first_doc_snapshot_resume();
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
