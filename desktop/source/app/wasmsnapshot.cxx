@@ -31,6 +31,14 @@ namespace wasmshim::detail {
     std::mutex g_snapshotMutex;
     std::condition_variable g_snapshotCV;
     bool g_snapshotDone = false;
+    // When JS disables snapshot save (killswitch), preloadDocumentModules
+    // is pure overhead AND causes UI pollution: each module emits its
+    // notebookbar/sidebar JSDialog over the fakesocket as soon as it
+    // loads, and dispose() doesn't tell COOL JS to remove those buttons.
+    // Result: a Writer doc shows leftover Calc tabs ("Formula") and a
+    // duplicate Navigator. Default true (preload runs); JS sets false
+    // via wasm_set_preload_disabled before main() if snapshot is killed.
+    bool g_preloadDisabled = false;
 }
 
 namespace wasmshim {
@@ -58,6 +66,13 @@ void waitForSnapshot()
 void preloadDocumentModules(
     css::uno::Reference<css::uno::XComponentContext> const& xContext)
 {
+    if (detail::g_preloadDisabled)
+    {
+        MAIN_THREAD_ASYNC_EM_ASM({
+            console.log('wasmshim:preload_skipped (disabled by JS)');
+        });
+        return;
+    }
     auto xLoader = css::frame::Desktop::create(xContext);
     css::uno::Sequence<css::beans::PropertyValue> empty(0);
     const OUString factories[] = {
@@ -82,6 +97,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
         wasmshim::detail::g_snapshotDone = true;
     }
     wasmshim::detail::g_snapshotCV.notify_all();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_preload_disabled(int disabled)
+{
+    wasmshim::detail::g_preloadDisabled = (disabled != 0);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
