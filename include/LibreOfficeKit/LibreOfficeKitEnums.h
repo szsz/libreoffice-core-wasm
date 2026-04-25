@@ -1067,8 +1067,24 @@ typedef enum
      *
      * Here all aproperties are same as described in svxruler.
      */
-    LOK_CALLBACK_VERTICAL_RULER_UPDATE = 73
+    LOK_CALLBACK_VERTICAL_RULER_UPDATE = 73,
 
+    /**
+     * Fires once when Kit completes the first paint of the first user
+     * document for this LOK runtime instance — the moment at which the
+     * heap is in a "fully warmed, doc loaded, idle" state suitable for
+     * a memory snapshot.
+     *
+     * Emitted exactly once per LibreOfficeKit lifetime; subsequent doc
+     * opens within the same Kit instance do NOT re-emit. The payload is
+     * a JSON string with the doc type:
+     *
+     *  { "type": "text" | "spreadsheet" | "presentation" | ... }
+     *
+     * Used by the WASM/Online build to trigger heap-snapshot save from
+     * JS without resorting to DOM heuristics.
+     */
+    LOK_CALLBACK_FIRST_DOC_PAINTED = 74
 }
 LibreOfficeKitCallbackType;
 
