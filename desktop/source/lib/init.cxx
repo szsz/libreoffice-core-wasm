@@ -8340,8 +8340,20 @@ static int lo_initialize(LibreOfficeKit* pThis, const char* pAppPath, const char
 
     LibLibreOffice_Impl* pLib = static_cast<LibLibreOffice_Impl*>(pThis);
 
+#ifdef __EMSCRIPTEN__
+    // WASM snapshot: bInitialized==true on snapshot restore (it was true
+    // when the heap was captured). Force SECOND_INIT so InitVCL re-runs
+    // and warms fontconfig/font-cache; otherwise these init lazily on
+    // first doc open and add ~20s.
+    if (bInitialized)
+    {
+        bInitialized = false;
+        bPreInited = true;
+    }
+#else
     if (bInitialized)
         return 1;
+#endif
 
     comphelper::ProfileZone aZone("lok-init");
 
