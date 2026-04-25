@@ -166,6 +166,12 @@
 
 #include <strings.hxx>
 
+#ifdef __EMSCRIPTEN__
+#include <wasmsnapshot.hxx>
+#include <emscripten.h>
+extern bool g_wasmSkipExecute;  // defined in online repo's wasmapp.cpp
+#endif
+
 using namespace ::com::sun::star::awt;
 using namespace ::com::sun::star::uno;
 using namespace ::com::sun::star::util;
@@ -1677,6 +1683,19 @@ int Desktop::Main()
             // if this run of the office is triggered by restart, some additional actions should be done
             DoRestartActionsIfNecessary( !rCmdLineArgs.IsInvisible() && !rCmdLineArgs.IsNoQuickstart() );
 
+#ifdef __EMSCRIPTEN__
+            // WASM snapshot: warm Writer/Calc/Impress modules into the heap,
+            // signal JS to capture the snapshot, then block until JS is done.
+            // The pthread condvar wake comes from extern "C" wasm_snapshot_complete.
+            if (::g_wasmSkipExecute)
+            {
+                RequestHandler::SetReady(true);
+                wasmshim::preloadDocumentModules(xContext);
+                MAIN_THREAD_ASYNC_EM_ASM({ if (Module.__snapshotReady) Module.__snapshotReady(); });
+                wasmshim::waitForSnapshot();
+                ::g_wasmSkipExecute = false;
+            }
+#endif
             Execute();
         }
     }
