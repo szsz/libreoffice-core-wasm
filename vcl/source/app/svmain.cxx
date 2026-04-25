@@ -242,6 +242,13 @@ int ImplSVMainRun()
     }
 
     WatchdogThread::stop();
+#ifdef __EMSCRIPTEN__
+    // WASM snapshot: Desktop::Main #1 (from lo_startmain) returns early
+    // so lo_initialize's WaitForReady can unblock. Do NOT DeInitVCL here —
+    // Desktop::Main #2 (from lo_runLoop) still needs VCL.
+    extern bool g_wasmSkipExecute;
+    if (!g_wasmSkipExecute)
+#endif
     DeInitVCL();
 
     return nReturn;
