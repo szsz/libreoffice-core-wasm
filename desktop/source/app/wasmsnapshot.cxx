@@ -37,8 +37,22 @@ namespace wasmshim {
 
 void waitForSnapshot()
 {
+    using namespace std::chrono;
     std::unique_lock<std::mutex> lk(detail::g_snapshotMutex);
-    detail::g_snapshotCV.wait(lk, []{ return detail::g_snapshotDone; });
+    // 60s timeout: converts a JS-side hang (closed tab, save error,
+    // dispatch lost) from an unrecoverable C++ block into a slow
+    // fallback. Better to enter Execute() without a snapshot saved
+    // than to leave the user with a frozen page.
+    bool ok = detail::g_snapshotCV.wait_for(
+        lk, seconds(60),
+        []{ return detail::g_snapshotDone; });
+    if (!ok)
+    {
+        MAIN_THREAD_ASYNC_EM_ASM({
+            console.warn('wasmshim::waitForSnapshot timed out — proceeding without snapshot save');
+        });
+        detail::g_snapshotDone = true;  // unstick any subsequent waiter
+    }
 }
 
 void preloadDocumentModules(
