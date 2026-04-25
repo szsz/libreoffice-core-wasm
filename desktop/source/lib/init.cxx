@@ -8131,10 +8131,16 @@ static int lo_initialize(LibreOfficeKit* pThis, const char* pAppPath, const char
     // when the heap was captured). Force SECOND_INIT so InitVCL re-runs
     // and warms fontconfig/font-cache; otherwise these init lazily on
     // first doc open and add ~20s.
+    //
+    // Setting eStage directly (instead of just flipping bPreInited) makes
+    // this take effect for the CURRENT call. eStage was determined a few
+    // lines above before we got here, so flipping bPreInited would only
+    // have affected a hypothetical future call. The previous code's
+    // "Force SECOND_INIT" comment didn't match what the code actually did.
     if (bInitialized)
     {
         bInitialized = false;
-        bPreInited = true;
+        eStage = SECOND_INIT;
     }
 #else
     if (bInitialized)

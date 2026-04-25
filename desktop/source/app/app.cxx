@@ -1686,14 +1686,29 @@ int Desktop::Main()
             // WASM snapshot: warm Writer/Calc/Impress modules into the heap,
             // signal JS to capture the snapshot, then block until JS is done.
             // The pthread condvar wake comes from extern "C" wasm_snapshot_complete.
+            MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:enter g_wasmSkipExecute=' + $0); }, ::g_wasmSkipExecute ? 1 : 0);
             if (::g_wasmSkipExecute)
             {
                 RequestHandler::SetReady(true);
-                wasmshim::preloadDocumentModules(xContext);
+                MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:preload_start'); });
+                try {
+                    wasmshim::preloadDocumentModules(xContext);
+                } catch (const css::uno::Exception& e) {
+                    // Continue: a partial snapshot is still useful, and JS
+                    // must be signaled or it'll hang waiting forever.
+                    SAL_WARN("desktop.wasm", "preloadDocumentModules threw: " << e.Message);
+                    MAIN_THREAD_ASYNC_EM_ASM({ console.warn('wasmshim:preload_threw'); });
+                } catch (...) {
+                    SAL_WARN("desktop.wasm", "preloadDocumentModules threw unknown");
+                    MAIN_THREAD_ASYNC_EM_ASM({ console.warn('wasmshim:preload_threw_unknown'); });
+                }
+                MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:wait_start'); });
                 MAIN_THREAD_ASYNC_EM_ASM({ if (Module.__snapshotReady) Module.__snapshotReady(); });
                 wasmshim::waitForSnapshot();
+                MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:wait_end'); });
                 ::g_wasmSkipExecute = false;
             }
+            MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:Execute_starting'); });
 #endif
             Execute();
         }
