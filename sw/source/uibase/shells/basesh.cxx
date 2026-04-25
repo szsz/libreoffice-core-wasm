@@ -25,6 +25,7 @@
 
 #include <hintids.hxx>
 #include <comphelper/servicehelper.hxx>
+#include <comphelper/wasmcaps.hxx>
 #include <svl/languageoptions.hxx>
 #include <sfx2/docfile.hxx>
 #include <sfx2/linkmgr.hxx>
@@ -3260,7 +3261,10 @@ void SwBaseShell::InsertTable( SfxRequest& _rRequest )
                 {
                     if (rTableTable[n].GetName() == aAutoNameIn)
                     {
-                        pTAFormatIn.reset(new SwTableAutoFormat(rTableTable[n]));
+                        // Skip in jsdialog mode: SwTableAutoFormat copy-ctor
+                        // OOBs in WASM. InsertTable tolerates a nullptr pTAFormatIn.
+                        if (!wasmshim::isJsDialogMode())
+                            pTAFormatIn.reset(new SwTableAutoFormat(rTableTable[n]));
                         break;
                     }
                 }
@@ -3269,7 +3273,8 @@ void SwBaseShell::InsertTable( SfxRequest& _rRequest )
             else
             {
                 aTableNameIn = SvxResId(STR_TABSTYLE_DEFAULT);
-                pTAFormatIn.reset(new SwTableAutoFormat(rTableTable[0]));
+                if (!wasmshim::isJsDialogMode())
+                    pTAFormatIn.reset(new SwTableAutoFormat(rTableTable[0]));
             }
 
             if ( pFlags )
