@@ -19,6 +19,14 @@
 
 #include <emscripten.h>
 
+// Defined here so it lives in libsofficeapp and resolves for both LO Core's
+// standalone soffice.js executable and Online's online.js. app.cxx and
+// svmain.cxx reference it via extern. true on first visit (Desktop::Main
+// returns early to allow snapshot save); reset to false by app.cxx after
+// wasmshim::waitForSnapshot() returns; false on snapshot-restore visits
+// (cleared by Online's leakSnapshotPolls path before main runs).
+bool g_wasmSkipExecute = true;
+
 namespace wasmshim::detail {
     std::mutex g_snapshotMutex;
     std::condition_variable g_snapshotCV;
