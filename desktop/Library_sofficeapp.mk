@@ -114,6 +114,12 @@ $(eval $(call gb_Library_add_cxxflags,sofficeapp,\
 
 endif
 
+ifeq ($(OS),EMSCRIPTEN)
+$(eval $(call gb_Library_add_exception_objects,sofficeapp,\
+    desktop/source/app/wasmsnapshot \
+))
+endif
+
 $(eval $(call gb_Library_add_exception_objects,sofficeapp,\
     desktop/source/app/app \
     desktop/source/app/appinit \
