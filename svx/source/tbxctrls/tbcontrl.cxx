@@ -23,6 +23,7 @@
 #include <comphelper/propertysequence.hxx>
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/OAccessible.hxx>
+#include <comphelper/wasmcaps.hxx>
 #include <tools/color.hxx>
 #include <tools/fldunit.hxx>
 #include <svl/numformat.hxx>
@@ -3474,6 +3475,7 @@ void SvxFontNameBox_Base::statusChanged_Impl( const css::frame::FeatureStateEven
 void SvxFontNameToolBoxControl::statusChanged( const css::frame::FeatureStateEvent& rEvent )
 {
     SolarMutexGuard aGuard;
+    if (!m_pBox) return; // createItemWindow may have skipped construction (jsdialog mode)
     m_pBox->statusChanged_Impl(rEvent);
 
     if (m_pToolbar)
@@ -3490,6 +3492,12 @@ void SvxFontNameToolBoxControl::statusChanged( const css::frame::FeatureStateEve
 
 css::uno::Reference<css::awt::XWindow> SvxFontNameToolBoxControl::createItemWindow(const css::uno::Reference<css::awt::XWindow>& rParent)
 {
+    // Skip in jsdialog mode: SvxFontNameBox_Base ctor OOBs accessing the
+    // configuration backend for font-view settings. LOK renders the toolbar
+    // as HTML via jsdialog, so the VCL combo is never user-visible.
+    if (wasmshim::isJsDialogMode())
+        return css::uno::Reference<css::awt::XWindow>();
+
     uno::Reference< awt::XWindow > xItemWindow;
 
     if (m_pBuilder)
