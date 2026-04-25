@@ -19,6 +19,7 @@
 #include <sfx2/weldutils.hxx>
 #include <comphelper/processfactory.hxx>
 #include <comphelper/lok.hxx>
+#include <comphelper/wasmcaps.hxx>
 #include <com/sun/star/frame/UnknownModuleException.hpp>
 #include <com/sun/star/frame/XLayoutManager.hpp>
 #include <officecfg/Office/UI/ToolbarMode.hxx>
@@ -516,9 +517,14 @@ bool SfxNotebookBar::StateMethod(SystemWindow* pSysWindow,
                                                     xFrame, nWindowId));
                 pNotebookBar->SetDisposeCallback(LINK(nullptr, SfxNotebookBar, VclDisposeHdl), pViewShell);
 
-                rViewData.m_pToolbarUnoDispatcher.reset(
-                    new ToolbarUnoDispatcher(rViewData.m_pWeldedWrapper->getWeldedToolbar(),
-                                             rViewData.m_pWeldedWrapper->getBuilder(), xFrame));
+                // Skip in jsdialog mode: weld::ComboBox crashes in the Qt5/WASM
+                // backend during ToolbarUnoDispatcher construction. LOK draws
+                // the notebookbar as HTML via jsdialog, so the VCL dispatcher
+                // is never user-visible anyway.
+                if (!wasmshim::isJsDialogMode())
+                    rViewData.m_pToolbarUnoDispatcher.reset(
+                        new ToolbarUnoDispatcher(rViewData.m_pWeldedWrapper->getWeldedToolbar(),
+                                                 rViewData.m_pWeldedWrapper->getBuilder(), xFrame));
 
                 return true;
             }
