@@ -1,0 +1,65 @@
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/*
+ * This file is part of the LibreOffice project.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
+#include <wasmsnapshot.hxx>
+
+#include <condition_variable>
+#include <mutex>
+
+#include <com/sun/star/beans/PropertyValue.hpp>
+#include <com/sun/star/frame/Desktop.hpp>
+#include <com/sun/star/lang/XComponent.hpp>
+#include <rtl/ustring.hxx>
+
+#include <emscripten.h>
+
+namespace wasmshim::detail {
+    std::mutex g_snapshotMutex;
+    std::condition_variable g_snapshotCV;
+    bool g_snapshotDone = false;
+}
+
+namespace wasmshim {
+
+void waitForSnapshot()
+{
+    std::unique_lock<std::mutex> lk(detail::g_snapshotMutex);
+    detail::g_snapshotCV.wait(lk, []{ return detail::g_snapshotDone; });
+}
+
+void preloadDocumentModules(
+    css::uno::Reference<css::uno::XComponentContext> const& xContext)
+{
+    auto xLoader = css::frame::Desktop::create(xContext);
+    css::uno::Sequence<css::beans::PropertyValue> empty(0);
+    const OUString factories[] = {
+        u"private:factory/swriter"_ustr,
+        u"private:factory/scalc"_ustr,
+        u"private:factory/simpress"_ustr,
+    };
+    for (const auto& factory : factories)
+    {
+        auto xComp = xLoader->loadComponentFromURL(factory, u"_blank"_ustr, 0, empty);
+        if (xComp.is())
+            xComp->dispose();
+    }
+}
+
+} // namespace wasmshim
+
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
+{
+    {
+        std::lock_guard<std::mutex> lk(wasmshim::detail::g_snapshotMutex);
+        wasmshim::detail::g_snapshotDone = true;
+    }
+    wasmshim::detail::g_snapshotCV.notify_all();
+}
+
+/* vim:set shiftwidth=4 softtabstop=4 expandtab: */
