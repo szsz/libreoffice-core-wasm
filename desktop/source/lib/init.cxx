@@ -51,6 +51,11 @@
 #include <osl/detail/emscripten-bootstrap.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <chrono>
+#include <emscripten.h>
+#endif
+
 #include <algorithm>
 #include <memory>
 #include <iostream>
@@ -104,6 +109,9 @@
 #include <com/sun/star/frame/Desktop.hpp>
 #include <com/sun/star/frame/DispatchResultEvent.hpp>
 #include <com/sun/star/frame/DispatchResultState.hpp>
+#include <com/sun/star/frame/FrameSearchFlag.hpp>
+#include <com/sun/star/frame/XComponentLoader.hpp>
+#include <com/sun/star/frame/XController.hpp>
 #include <com/sun/star/frame/XDispatchProvider.hpp>
 #include <com/sun/star/frame/XDispatchResultListener.hpp>
 #include <com/sun/star/frame/XSynchronousDispatch.hpp>
@@ -2864,6 +2872,22 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
 
     static int nDocumentIdCounter = 0;
 
+#ifdef __EMSCRIPTEN__
+    // Hot-switch perf instrumentation. The OOL switchdocument path (kit/ChildSession.cpp)
+    // calls this whole function and currently sees ~38 s for a same-type docx swap.
+    // These marks let us decompose where the time goes inside loadComponentFromURL,
+    // which is otherwise an opaque single UNO call.
+    const auto lokT0 = std::chrono::steady_clock::now();
+    auto lokMs = [&lokT0]() {
+        return (int)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - lokT0).count();
+    };
+#define LOK_LOAD_MARK(label) MAIN_THREAD_ASYNC_EM_ASM({ console.log('LOK_LOAD[+' + $0 + 'ms] ' + UTF8ToString($1)); }, lokMs(), label)
+#else
+#define LOK_LOAD_MARK(label) ((void)0)
+#endif
+    LOK_LOAD_MARK("entered");
+
     LibLibreOffice_Impl* pLib = static_cast<LibLibreOffice_Impl*>(pThis);
     pLib->maLastExceptionMsg.clear();
 
@@ -3023,9 +3047,11 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
 
         const int nThisDocumentId = nDocumentIdCounter++;
         comphelper::LibreOfficeKit::setDocId(ViewShellDocId(nThisDocumentId));
+        LOK_LOAD_MARK("loadComponentFromURL:start");
         uno::Reference<lang::XComponent> xComponent = xComponentLoader->loadComponentFromURL(
                                             aURL, u"_blank"_ustr, 0,
                                             aFilterOptions);
+        LOK_LOAD_MARK("loadComponentFromURL:done");
 
         assert(!xComponent.is() || pair.second); // concurrent loading of same URL ought to fail
 
@@ -3039,6 +3065,7 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
         assert(comphelper::LibreOfficeKit::getDocId() == ViewShellDocId(nThisDocumentId) && "incorrect docid set on document");
 
         LibLODocument_Impl* pDocument = new LibLODocument_Impl(xComponent, nThisDocumentId);
+        LOK_LOAD_MARK("LibLODocument_Impl:created");
 
         // After loading the document, its initial view is the "current" view.
         if (pLib->mpCallback)
@@ -3153,6 +3180,104 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
 
     return nullptr;
 }
+
+#ifdef __EMSCRIPTEN__
+// Plan B — same-type in-place doc swap. Replaces the content of an
+// already-loaded document with content from a new file URL by reusing
+// the existing frame instead of going through the full lo_documentLoad
+// (model creation + view setup + factory init are all skipped). Caller
+// is kit/ChildSession.cpp's switchdocument branch.
+//
+// Returns 0 on success, 1 on cross-format mismatch (caller should fall
+// back to documentLoad), -1 on other failure.
+extern "C" EMSCRIPTEN_KEEPALIVE
+int wasm_reload_doc_in_place(LibreOfficeKitDocument* pThisDoc, const char* pURL)
+{
+    if (!pThisDoc || !pURL || !*pURL)
+        return -1;
+
+    SolarMutexGuard aGuard;
+
+    LibLODocument_Impl* pDocument = static_cast<LibLODocument_Impl*>(pThisDoc);
+    if (!pDocument->mxComponent.is())
+        return -1;
+
+    try
+    {
+        // The component is the doc model; getCurrentController() gives the
+        // primary view; xController->getFrame() gives the frame that hosts
+        // it. The frame implements XComponentLoader for in-place loads.
+        uno::Reference<frame::XModel> xModel(pDocument->mxComponent, uno::UNO_QUERY);
+        if (!xModel.is()) return -1;
+        uno::Reference<frame::XController> xController = xModel->getCurrentController();
+        if (!xController.is()) return -1;
+        uno::Reference<frame::XFrame> xFrame = xController->getFrame();
+        if (!xFrame.is()) return -1;
+        uno::Reference<frame::XComponentLoader> xFrameLoader(xFrame, uno::UNO_QUERY);
+        if (!xFrameLoader.is())
+        {
+            // Frame doesn't implement XComponentLoader directly; use Desktop
+            // with the frame's name as target. Frame names are mostly empty
+            // by default, so we set one if absent.
+            OUString frameName = xFrame->getName();
+            if (frameName.isEmpty())
+            {
+                frameName = u"_lok_inplace"_ustr;
+                xFrame->setName(frameName);
+            }
+            uno::Reference<frame::XDesktop2> xDesktop = frame::Desktop::create(xContext);
+            xFrameLoader = uno::Reference<frame::XComponentLoader>(xDesktop, uno::UNO_QUERY);
+            if (!xFrameLoader.is()) return -1;
+            // Load with target=frameName so the existing frame is reused.
+            const OUString aURL(getAbsoluteURL(pURL));
+            uno::Sequence<css::beans::PropertyValue> aArgs{
+                comphelper::makePropertyValue(u"FilterOptions"_ustr, OUString()),
+                comphelper::makePropertyValue(u"Hidden"_ustr, false),
+            };
+            uno::Reference<lang::XComponent> xNew = xFrameLoader->loadComponentFromURL(
+                aURL, frameName, css::frame::FrameSearchFlag::SELF, aArgs);
+            if (!xNew.is()) return -1;
+            // The frame now hosts the new doc; the new XComponent is what we
+            // want to track going forward. Replace the LibLODocument's mx.
+            pDocument->mxComponent = xNew;
+            return 0;
+        }
+
+        // Frame implements XComponentLoader directly — load with _self.
+        // Stash the old component so we can explicitly dispose it AFTER the
+        // new load completes. Just overwriting `pDocument->mxComponent`
+        // dropped only one strong ref; the old XComponent stayed alive
+        // through frame/view back-refs and accumulated state across multiple
+        // hot-switches caused the third in-place reload to hang inside
+        // loadComponentFromURL.
+        uno::Reference<lang::XComponent> xPrev = pDocument->mxComponent;
+
+        const OUString aURL(getAbsoluteURL(pURL));
+        uno::Sequence<css::beans::PropertyValue> aArgs{
+            comphelper::makePropertyValue(u"FilterOptions"_ustr, OUString()),
+            comphelper::makePropertyValue(u"Hidden"_ustr, false),
+        };
+        uno::Reference<lang::XComponent> xNew = xFrameLoader->loadComponentFromURL(
+            aURL, u"_self"_ustr, 0, aArgs);
+        if (!xNew.is()) return -1;
+        pDocument->mxComponent = xNew;
+
+        // Now dispose the previous component to release its SfxObjectShell,
+        // file streams, and listener registrations. Done AFTER the new load
+        // succeeds so a load failure doesn't leave the frame with no doc.
+        if (xPrev.is() && xPrev != xNew)
+        {
+            try { xPrev->dispose(); }
+            catch (const css::lang::DisposedException&) {} // already gone
+        }
+        return 0;
+    }
+    catch (const uno::Exception&)
+    {
+        return -1;
+    }
+}
+#endif
 
 static int lo_runMacro(LibreOfficeKit* pThis, const char *pURL)
 {
