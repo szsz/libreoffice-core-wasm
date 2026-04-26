@@ -60,6 +60,10 @@ void warmupCoreFactories(
 /// can be planned. Free-form string; JS treats unknown values as "text".
 void firstDocPainted(std::string_view docTypeHint);
 
+/// Plan C — read by COOLWSD's main poll loop so it can park itself
+/// before HEAPU8 capture. Lock-free atomic load.
+bool isQuiesce();
+
 } // namespace wasmshim
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

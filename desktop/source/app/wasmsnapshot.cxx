@@ -42,6 +42,11 @@ namespace wasmshim::detail {
     // duplicate Navigator. Default true (preload runs); JS sets false
     // via wasm_set_preload_disabled before main() if snapshot is killed.
     bool g_preloadDisabled = false;
+    // Set by JS (wasm_set_warm_restored) right before callMain on snapshot
+    // restore. C++ reads this synchronously instead of doing a
+    // MAIN_THREAD_EM_ASM_INT proxy from a worker thread (which deadlocks
+    // when the WASM main thread is past its return).
+    std::atomic<int> g_warmRestored{ 0 };
 
     // True while wasmshim::warmupCoreFactories is loading-and-disposing
     // Writer/Calc/Impress factories. Online's kit/ChildSession reads this
@@ -61,6 +66,22 @@ namespace wasmshim::detail {
     std::condition_variable g_phase2CV;
     bool g_phase2ResumeRequested = false;
     std::atomic<bool> g_phase2Triggered{false};
+
+    // Plan C — quiesce flag for warm-restore. Set by the kit thread
+    // immediately before firstDocPainted; read by the COOLWSD main loop
+    // at the top of every iteration. When set, COOLWSD joins its own
+    // dependent SocketPolls (PrisonerPoll/AcceptPoll/WebServerPoll) and
+    // parks on g_coolwsdResumeCV until the kit thread (cold) or JS
+    // (warm) signals resume. Avoids the BLOCKER from review where the
+    // kit thread killed PrisonerPoll while COOLWSD was actively poking
+    // it on every wakeup. This first commit only plumbs the flag; the
+    // actual park/join mechanism lands in a follow-up.
+    std::atomic<int> g_quiesce{ 0 };
+    std::mutex g_quiesceMutex;
+    std::condition_variable g_coolwsdParkedCV;
+    std::condition_variable g_coolwsdResumeCV;
+    std::atomic<bool> g_coolwsdParked{false};
+    std::atomic<bool> g_coolwsdResume{false};
 }
 
 namespace wasmshim {
@@ -163,6 +184,11 @@ void warmupCoreFactories(
     }, static_cast<int>(ms));
 }
 
+bool isQuiesce()
+{
+    return detail::g_quiesce.load(std::memory_order_acquire) != 0;
+}
+
 void firstDocPainted(std::string_view docTypeHint)
 {
     using namespace std::chrono;
@@ -218,6 +244,70 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
 extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_preload_disabled(int disabled)
 {
     wasmshim::detail::g_preloadDisabled = (disabled != 0);
+}
+
+/// Called from the deploy.sh-injected restore block on warm-snapshot
+/// visits, after HEAPU8.set but before callMain. Lets C++ Desktop::Main
+/// (running on the lokit_main worker thread later) read the warm-restore
+/// state synchronously without a MAIN_THREAD_EM_ASM_INT proxy that would
+/// deadlock against the long-returned WASM main thread.
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_warm_restored(int restored)
+{
+    wasmshim::detail::g_warmRestored.store(restored != 0 ? 1 : 0,
+                                            std::memory_order_release);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int wasm_is_warm_restored()
+{
+    return wasmshim::detail::g_warmRestored.load(std::memory_order_acquire);
+}
+
+/// Plan C — kit thread sets this before firstDocPainted to ask COOLWSD
+/// to park itself; restore-side JS clears it before callMain.
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_quiesce(int q)
+{
+    wasmshim::detail::g_quiesce.store(q ? 1 : 0, std::memory_order_release);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int wasm_is_quiesce()
+{
+    return wasmshim::detail::g_quiesce.load(std::memory_order_acquire);
+}
+
+/// COOLWSD thread calls this once it has joined its dependent polls and
+/// is about to park. Wakes the kit thread which is waiting in
+/// wasm_wait_coolwsd_parked.
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_coolwsd_parked()
+{
+    {
+        std::lock_guard<std::mutex> lk(wasmshim::detail::g_quiesceMutex);
+        wasmshim::detail::g_coolwsdParked.store(true, std::memory_order_release);
+    }
+    wasmshim::detail::g_coolwsdParkedCV.notify_all();
+}
+
+/// Kit thread waits here for COOLWSD to ack-park before triggering the
+/// snapshot. 5 second timeout so we never deadlock the cold-visit
+/// session if the COOLWSD thread is unhealthy.
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_wait_coolwsd_parked()
+{
+    using namespace std::chrono;
+    std::unique_lock<std::mutex> lk(wasmshim::detail::g_quiesceMutex);
+    wasmshim::detail::g_coolwsdParkedCV.wait_for(
+        lk, seconds(5),
+        []{ return wasmshim::detail::g_coolwsdParked.load(std::memory_order_acquire); });
+}
+
+/// Signals COOLWSD to leave its parked state and re-spawn its polls.
+/// Called from kit thread after firstDocPainted returns (cold visit) or
+/// from JS deploy.sh restore block (warm visit).
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_coolwsd_resume()
+{
+    {
+        std::lock_guard<std::mutex> lk(wasmshim::detail::g_quiesceMutex);
+        wasmshim::detail::g_coolwsdResume.store(true, std::memory_order_release);
+    }
+    wasmshim::detail::g_coolwsdResumeCV.notify_all();
 }
 
 /// Online's kit/ChildSession reads this to drop UI-state messages while
