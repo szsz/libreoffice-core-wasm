@@ -35,6 +35,16 @@ void waitForSnapshot();
 void preloadDocumentModules(
     css::uno::Reference<css::uno::XComponentContext> const& xContext);
 
+/// Wraps preloadDocumentModules with detail::g_suppressUIEmission=true so
+/// the JSDialog notebookbar/sidebar payloads emitted while modules
+/// instantiate-and-dispose never reach JS. Logs warmup duration via
+/// MAIN_THREAD_ASYNC_EM_ASM. Called from Desktop::Main after lo_initialize
+/// returns; cold-start cost ~2-3s. Every subsequent in-session format
+/// switch (writer↔calc↔impress) is fast because the new format's
+/// factory is already warm in the heap.
+void warmupCoreFactories(
+    css::uno::Reference<css::uno::XComponentContext> const& xContext);
+
 /// Phase-2 snapshot trigger. Online's ChildSession calls this exactly once,
 /// the first time a real user document finishes loading on this LOK runtime
 /// instance. Effects:

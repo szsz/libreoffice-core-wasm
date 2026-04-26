@@ -1683,15 +1683,26 @@ int Desktop::Main()
             DoRestartActionsIfNecessary( !rCmdLineArgs.IsInvisible() && !rCmdLineArgs.IsNoQuickstart() );
 
 #ifdef __EMSCRIPTEN__
-            // Phase-2: snapshot save trigger has moved out of Desktop::Main.
-            // It now fires from kit/ChildSession.cpp via wasmshim::firstDocPainted()
-            // when the very first user document loads. This means:
-            //   - No preloadDocumentModules here (caused JSDialog UI pollution).
-            //   - No waitForSnapshot here (snapshot saves while a real doc is loaded).
-            //   - g_wasmSkipExecute is dead state, kept only to not break the
-            //     standalone soffice.js link until we drop the extern.
+            // Phase-1.4: pre-warm Writer/Calc/Impress factories silently
+            // (g_suppressUIEmission gates the JSDialog/notebookbar frames
+            // that would otherwise leak into the user's first-doc UI).
+            // Cold cost ~2-3s; payoff is that every in-session format
+            // switch hits warm factories instead of cold-loading them.
+            //
+            // Phase-2: snapshot save trigger lives in kit/ChildSession.cpp
+            // via wasmshim::firstDocPainted() when the very first user
+            // document loads. g_wasmSkipExecute is dead state, kept only
+            // to not break the standalone soffice.js link until we drop
+            // the extern.
             ::g_wasmSkipExecute = false;
             RequestHandler::SetReady(true);
+            try { wasmshim::warmupCoreFactories(xContext); }
+            catch (const css::uno::Exception& e) {
+                SAL_WARN("desktop.wasm", "warmupCoreFactories threw: " << e.Message);
+            }
+            catch (...) {
+                SAL_WARN("desktop.wasm", "warmupCoreFactories threw unknown");
+            }
             MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:Execute_starting'); });
 #endif
             Execute();

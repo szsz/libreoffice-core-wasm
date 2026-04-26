@@ -43,6 +43,16 @@ namespace wasmshim::detail {
     // via wasm_set_preload_disabled before main() if snapshot is killed.
     bool g_preloadDisabled = false;
 
+    // True while wasmshim::warmupCoreFactories is loading-and-disposing
+    // Writer/Calc/Impress factories. Online's kit/ChildSession reads this
+    // (via extern "C" wasm_is_ui_emission_suppressed) and drops every
+    // outbound frame to JS during the window — so the JSDialog/notebookbar/
+    // sidebar payloads emitted while modules instantiate-and-dispose never
+    // reach COOL JS, never paint into the DOM, and don't pollute the user's
+    // first real-doc UI. After warmup returns the flag is cleared and the
+    // user's actual doc-load proceeds normally with all factories warm.
+    bool g_suppressUIEmission = false;
+
     // Phase-2 first-doc-painted handshake. wasmshim::firstDocPainted()
     // signals JS, then blocks on g_phase2CV until JS calls
     // wasm_first_doc_snapshot_resume(). One-shot: g_phase2Triggered
@@ -100,6 +110,59 @@ void preloadDocumentModules(
     }
 }
 
+void warmupCoreFactories(
+    css::uno::Reference<css::uno::XComponentContext> const& xContext)
+{
+    // NOTE: not gated by g_preloadDisabled. That flag was a snapshot-era
+    // killswitch for the OLD preloadDocumentModules path that polluted the
+    // UI. With g_suppressUIEmission below the warmup is silent, so it's
+    // safe to run independently of whether a snapshot will be saved.
+    using namespace std::chrono;
+    auto t_start = steady_clock::now();
+
+    MAIN_THREAD_ASYNC_EM_ASM({
+        console.log('wasmshim:warmup_start (UI emission suppressed)');
+    });
+
+    // Inline the load-dispose loop here (don't call preloadDocumentModules
+    // which is gated by g_preloadDisabled). With suppression on, running
+    // unconditionally is the right behavior for Phase-1.4.
+    detail::g_suppressUIEmission = true;
+    try {
+        auto xLoader = css::frame::Desktop::create(xContext);
+        css::uno::Sequence<css::beans::PropertyValue> empty(0);
+        const OUString factories[] = {
+            u"private:factory/swriter"_ustr,
+            u"private:factory/scalc"_ustr,
+            u"private:factory/simpress"_ustr,
+        };
+        for (const auto& factory : factories)
+        {
+            auto xComp = xLoader->loadComponentFromURL(factory, u"_blank"_ustr, 0, empty);
+            if (xComp.is())
+                xComp->dispose();
+        }
+    }
+    catch (const css::uno::Exception&)
+    {
+        MAIN_THREAD_ASYNC_EM_ASM({
+            console.warn('wasmshim:warmup_threw (uno::Exception)');
+        });
+    }
+    catch (...)
+    {
+        MAIN_THREAD_ASYNC_EM_ASM({
+            console.warn('wasmshim:warmup_threw (unknown)');
+        });
+    }
+    detail::g_suppressUIEmission = false;
+
+    auto ms = duration_cast<milliseconds>(steady_clock::now() - t_start).count();
+    MAIN_THREAD_ASYNC_EM_ASM({
+        console.log('wasmshim:warmup_end ' + $0 + 'ms');
+    }, static_cast<int>(ms));
+}
+
 void firstDocPainted(std::string_view docTypeHint)
 {
     using namespace std::chrono;
@@ -155,6 +218,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
 extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_preload_disabled(int disabled)
 {
     wasmshim::detail::g_preloadDisabled = (disabled != 0);
+}
+
+/// Online's kit/ChildSession reads this to drop UI-state messages while
+/// wasmshim::warmupCoreFactories is loading-and-disposing module factories.
+/// Returns 1 while suppression is active, 0 otherwise.
+extern "C" EMSCRIPTEN_KEEPALIVE int wasm_is_ui_emission_suppressed()
+{
+    return wasmshim::detail::g_suppressUIEmission ? 1 : 0;
 }
 
 /// JS calls this after capturing HEAPU8 in response to Module.__firstDocLoaded.
