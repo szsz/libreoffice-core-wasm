@@ -29,6 +29,13 @@ CCACHE_HOST="$STATE_DIR/ccache"
 
 mkdir -p "$STATE_DIR" "$CORE_BUILD_HOST" "$CCACHE_HOST"
 
+# ── Cleanup trap: container runs as root and writes into the bind-mounted
+# workspace (autogen.sh updates m4/, autom4te.cache/, externals download,
+# etc.), leaving root-owned files. The next run's actions/checkout cannot
+# delete them and the whole job fails at the Checkout step. Always chown
+# the workspace back to the runner user (UID 1000 = localadmin) on exit.
+trap 'sudo chown -R 1000:1000 "$WORKSPACE" 2>/dev/null || true' EXIT
+
 # ── Acquire host-wide lock ─────────────────────────────────────
 exec 9>"$LOCK"
 echo "Acquiring host build lock ($LOCK) …"
