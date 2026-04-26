@@ -14,6 +14,10 @@
 # fails with a missing path, add it here.
 set -euo pipefail
 
+# shellcheck source=_lib.sh
+source "$(dirname "$0")/_lib.sh"
+ensure_storage_key
+
 BID="${BUILD_ID:?}"
 ACCT="${AZURE_STORAGE_ACCOUNT:?}"
 SITE="${STATIC_SITE_BASE:?}"
@@ -95,7 +99,7 @@ HTML
 # ── Upload ───────────────────────────────────────────────────────
 upload() {
     local src="$1" name="$2" ctype="${3:-}"
-    local args=(--account-name "$ACCT" --auth-mode login --container-name '$web'
+    local args=(--account-name "$ACCT" --container-name '$web'
                 --name "$name" --file "$src" --overwrite --no-progress)
     [[ -n "$ctype" ]] && args+=(--content-type "$ctype")
     az storage blob upload "${args[@]}" >/dev/null
