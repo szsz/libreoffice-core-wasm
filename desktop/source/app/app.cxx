@@ -186,6 +186,10 @@ using namespace ::com::sun::star::ui;
 using namespace ::com::sun::star::ui::dialogs;
 using namespace ::com::sun::star::container;
 
+#ifdef __EMSCRIPTEN__
+extern "C" int wasm_is_warm_restored();
+#endif
+
 namespace desktop
 {
 
@@ -1696,12 +1700,26 @@ int Desktop::Main()
             // the extern.
             ::g_wasmSkipExecute = false;
             RequestHandler::SetReady(true);
-            try { wasmshim::warmupCoreFactories(xContext); }
-            catch (const css::uno::Exception& e) {
-                SAL_WARN("desktop.wasm", "warmupCoreFactories threw: " << e.Message);
-            }
-            catch (...) {
-                SAL_WARN("desktop.wasm", "warmupCoreFactories threw unknown");
+            // On warm-snapshot-restore visits the factories are already in
+            // the heap (the snapshot was captured AFTER the cold visit ran
+            // warmupCoreFactories). Re-running on the restored heap touches
+            // VCL/sfx2 statics that the snapshot's mutex state isn't ready
+            // for and can trap inside Execute() shortly after.
+            // Use the C++ atomic (set by JS via wasm_set_warm_restored before
+            // callMain), NOT MAIN_THREAD_EM_ASM_INT — the latter proxies to
+            // the WASM main thread which has already returned by this point,
+            // and the proxy hangs forever from the lokit_main worker.
+            const bool isWarmRestore = (::wasm_is_warm_restored() != 0);
+            if (!isWarmRestore) {
+                try { wasmshim::warmupCoreFactories(xContext); }
+                catch (const css::uno::Exception& e) {
+                    SAL_WARN("desktop.wasm", "warmupCoreFactories threw: " << e.Message);
+                }
+                catch (...) {
+                    SAL_WARN("desktop.wasm", "warmupCoreFactories threw unknown");
+                }
+            } else {
+                MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: warmupCoreFactories skipped (warm-restore)'); });
             }
             MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:Execute_starting'); });
 #endif
