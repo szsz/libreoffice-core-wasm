@@ -2,21 +2,19 @@
 #
 # Derived from the allotropia builder image (the same one wasm/build-wasm.sh
 # uses for dev), but tagged separately so it never collides with a developer's
-# local containers on the same host. The image bakes in the runtime fixes
-# build-wasm.sh applies on first run (gcc-12, node 24, emsdk symlink) plus
-# azure-cli for upload/download from coolwasmfiles.
-#
-# POCO with -fwasm-exceptions and ccache state are NOT baked in — they live
-# in the persistent state volume on the runner host, so they survive across
-# image rebuilds and don't bloat the layer cache.
+# local containers on the same host. The image bakes in:
+#   - the runtime fixes wasm/build-wasm.sh applies on first run (gcc-12, node 24,
+#     emsdk symlink),
+#   - azure-cli (artefact upload/download from coolwasmfiles),
+#   - POCO 1.12.4 rebuilt with -fwasm-exceptions, installed to /usr/local
+#     (the dev script does this at runtime; baking it makes CI deterministic
+#     and removes the need to volume-mount /usr/local — which masks all the
+#     other libraries the image ships).
 FROM public.ecr.aws/allotropia/libo-builders/wasm:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# gcc-12 default (LO core requires it), node 24 (online build), git-lfs (deploy
-# touches large blobs), zstd (artefact archive format), jq (manifest scraping),
-# python3 (snapshot patcher), azure-cli (artefact upload/download),
-# ca-certificates (TLS for az + curl).
+# gcc-12 default, node 24, jq/zstd/python3 (orchestration), azure-cli (upload).
 RUN set -eux; \
     apt-get update -qq; \
     apt-get install -y -qq --no-install-recommends \
@@ -37,14 +35,36 @@ RUN set -eux; \
     apt-get install -y -qq azure-cli; \
     rm -rf /var/lib/apt/lists/*
 
-# emsdk layout fix (build-wasm.sh applies this at runtime; bake it instead so
-# the runtime path is silent).
+# emsdk layout fix — bake the symlink so the runtime path is silent.
 RUN if [ ! -d /home/builder/emsdk/upstream ]; then \
         mkdir -p /home/builder/emsdk/upstream && \
         ln -sfn /home/builder/emsdk/emscripten/main /home/builder/emsdk/upstream/emscripten; \
     fi
 
-# Mark this image so logs/inspections show what we're running on.
+# Rebuild POCO 1.12.4 with -fwasm-exceptions and install to /usr/local.
+# Slow (10-15 min), but only happens once per Dockerfile change.
+RUN set -eux; \
+    bash -lc '\
+        source /home/builder/emsdk/emsdk_env.sh ; \
+        cd /tmp ; \
+        POCO_VER=1.12.4 ; \
+        wget -q https://pocoproject.org/releases/poco-${POCO_VER}/poco-${POCO_VER}-all.tar.bz2 ; \
+        tar -xjf poco-${POCO_VER}-all.tar.bz2 ; \
+        rm -f poco-${POCO_VER}-all.tar.bz2 ; \
+        cd poco-${POCO_VER}-all ; \
+        if [ -f XML/src/xmlparse.cpp ] ; then mv XML/src/xmlparse.cpp XML/src/xmlparse.c ; fi ; \
+        emconfigure ./configure --static --no-samples --no-tests \
+            --omit=Crypto,NetSSL_OpenSSL,JWT,Data,Data/SQLite,Data/ODBC,Data/MySQL,Data/PostgreSQL,Zip,PageCompiler,PageCompiler/File2Page,MongoDB,Redis,ActiveRecord,ActiveRecord/Compiler,Prometheus ; \
+        emmake make -j"$(nproc)" \
+            CC=$EMSDK/upstream/emscripten/emcc \
+            CXX=$EMSDK/upstream/emscripten/em++ \
+            LD=$EMSDK/upstream/emscripten/em++ \
+            CXXFLAGS="-DPOCO_NO_LINUX_IF_PACKET_H -DPOCO_NO_INOTIFY -pthread -s USE_PTHREADS=1 -fwasm-exceptions" ; \
+        make -j"$(nproc)" install INSTALLDIR=/usr/local ; \
+    ' ; \
+    rm -rf /tmp/poco-1.12.4-all ; \
+    touch /usr/local/.poco-fwasm-exceptions.done
+
 ENV LO_WASM_CI_IMAGE=lo-wasm-ci
 LABEL org.opencontainers.image.title="lo-wasm-ci" \
       org.opencontainers.image.description="CI image for building LibreOffice WASM (separate from dev containers)"
