@@ -38,18 +38,26 @@ echo "--- Staging artefacts ---"
 # instdir
 cp -a "$CORE_BUILD_HOST/instdir" "$STAGE/core-build/"
 
-# workdir bits — keep size manageable. Add directories here if online build
-# misses something at link time.
+# workdir bits the online build needs at compile/link time. UnpackedTarball
+# carries the unpacked external libraries (libpng, zlib, …) whose headers the
+# online build #includes — without them the online compile fails with
+# 'png.h not found'. UnpackedTarball is the largest contributor (~2-3 GB raw,
+# ~600 MB zstd) but the alternative is shipping pre-built header bundles per
+# tarball, which is more fragile.
 mkdir -p "$STAGE/core-build/workdir"
-for sub in CustomTarget LinkTarget Headers; do
+for sub in CustomTarget LinkTarget Headers UnpackedTarball; do
     [[ -d "$CORE_BUILD_HOST/workdir/$sub" ]] && cp -a "$CORE_BUILD_HOST/workdir/$sub" "$STAGE/core-build/workdir/" || true
 done
 
-# Source headers + solenv from the workspace checkout
-[[ -d "$WORKSPACE/include" ]] && cp -a "$WORKSPACE/include" "$STAGE/core/"
-[[ -d "$WORKSPACE/solenv"  ]] && cp -a "$WORKSPACE/solenv"  "$STAGE/core/"
-# The online configure passes --with-lo-sourcedir=/lo/core; just ship the bits
-# it actually pokes at to keep size reasonable.
+# Source-tree dirs the online configure / link references via
+# --with-lo-sourcedir=/lo/core:
+#   include/   — public LOK + module headers
+#   solenv/    — build glue referenced by configure
+#   static/    — emscripten/{environment,uno}.js used as --pre-js / --post-js
+#   unotest/   — embindtest.js used at link time
+for sub in include solenv static unotest; do
+    [[ -d "$WORKSPACE/$sub" ]] && cp -a "$WORKSPACE/$sub" "$STAGE/core/" || true
+done
 
 echo "--- Compressing (zstd) ---"
 ( cd "$STAGE" && tar -I 'zstd -19 -T0' -cf "$TARBALL" . )
