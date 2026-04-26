@@ -36,6 +36,24 @@ mkdir -p "$STATE_DIR" "$CORE_BUILD_HOST" "$CCACHE_HOST"
 # the workspace back to the runner user (UID 1000 = localadmin) on exit.
 trap 'sudo chown -R 1000:1000 "$WORKSPACE" 2>/dev/null || true' EXIT
 
+# ── Restore source-tree mtimes from git history ────────────────
+# actions/checkout writes every file with `now` as the mtime, which makes
+# `make` see all sources as newer than core-build artefacts and rebuild
+# the entire LO core from scratch on every run (~3h). git-restore-mtime
+# walks the git log and sets each file's mtime to its last commit time,
+# so unchanged-since-last-build files end up with mtimes earlier than the
+# core-build artefacts → make becomes truly incremental.
+if ! command -v git-restore-mtime >/dev/null 2>&1; then
+    echo "--- Installing git-restore-mtime ---"
+    sudo apt-get install -y -qq git-restore-mtime 2>/dev/null || true
+fi
+if command -v git-restore-mtime >/dev/null 2>&1; then
+    echo "--- Restoring source file mtimes from git history ---"
+    (cd "$WORKSPACE" && git-restore-mtime --skip-missing --quiet 2>&1 | tail -3) || true
+else
+    echo "WARNING: git-restore-mtime unavailable; LO build will be from-scratch each run." >&2
+fi
+
 # ── Acquire host-wide lock ─────────────────────────────────────
 exec 9>"$LOCK"
 echo "Acquiring host build lock ($LOCK) …"
