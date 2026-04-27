@@ -35,6 +35,16 @@ void waitForSnapshot();
 void preloadDocumentModules(
     css::uno::Reference<css::uno::XComponentContext> const& xContext);
 
+/// Wraps preloadDocumentModules with detail::g_suppressUIEmission=true so
+/// the JSDialog notebookbar/sidebar payloads emitted while modules
+/// instantiate-and-dispose never reach JS. Logs warmup duration via
+/// MAIN_THREAD_ASYNC_EM_ASM. Called from Desktop::Main after lo_initialize
+/// returns; cold-start cost ~2-3s. Every subsequent in-session format
+/// switch (writer↔calc↔impress) is fast because the new format's
+/// factory is already warm in the heap.
+void warmupCoreFactories(
+    css::uno::Reference<css::uno::XComponentContext> const& xContext);
+
 /// Phase-2 snapshot trigger. Online's ChildSession calls this exactly once,
 /// the first time a real user document finishes loading on this LOK runtime
 /// instance. Effects:
@@ -49,6 +59,16 @@ void preloadDocumentModules(
 /// the first-loaded doc's type so cross-module switchdoc on warm restore
 /// can be planned. Free-form string; JS treats unknown values as "text".
 void firstDocPainted(std::string_view docTypeHint);
+
+/// Plan C — read by COOLWSD's main poll loop so it can park itself
+/// before HEAPU8 capture. Lock-free atomic load.
+bool isQuiesce();
+
+/// Plan C — called by the COOLWSD thread after it has joined its own
+/// dependent SocketPolls and signalled wasm_coolwsd_parked. Blocks until
+/// JS (warm) or the kit thread (cold) calls wasm_coolwsd_resume.
+/// 60s timeout to break a deadlock if the resume signal is lost.
+void waitForCoolwsdResume();
 
 } // namespace wasmshim
 

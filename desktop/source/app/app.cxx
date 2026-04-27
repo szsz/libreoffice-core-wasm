@@ -187,6 +187,10 @@ using namespace ::com::sun::star::ui;
 using namespace ::com::sun::star::ui::dialogs;
 using namespace ::com::sun::star::container;
 
+#ifdef __EMSCRIPTEN__
+extern "C" int wasm_is_warm_restored();
+#endif
+
 namespace desktop
 {
 
@@ -1684,15 +1688,40 @@ int Desktop::Main()
             DoRestartActionsIfNecessary( !rCmdLineArgs.IsInvisible() && !rCmdLineArgs.IsNoQuickstart() );
 
 #ifdef __EMSCRIPTEN__
-            // Phase-2: snapshot save trigger has moved out of Desktop::Main.
-            // It now fires from kit/ChildSession.cpp via wasmshim::firstDocPainted()
-            // when the very first user document loads. This means:
-            //   - No preloadDocumentModules here (caused JSDialog UI pollution).
-            //   - No waitForSnapshot here (snapshot saves while a real doc is loaded).
-            //   - g_wasmSkipExecute is dead state, kept only to not break the
-            //     standalone soffice.js link until we drop the extern.
+            // Phase-1.4: pre-warm Writer/Calc/Impress factories silently
+            // (g_suppressUIEmission gates the JSDialog/notebookbar frames
+            // that would otherwise leak into the user's first-doc UI).
+            // Cold cost ~2-3s; payoff is that every in-session format
+            // switch hits warm factories instead of cold-loading them.
+            //
+            // Phase-2: snapshot save trigger lives in kit/ChildSession.cpp
+            // via wasmshim::firstDocPainted() when the very first user
+            // document loads. g_wasmSkipExecute is dead state, kept only
+            // to not break the standalone soffice.js link until we drop
+            // the extern.
             ::g_wasmSkipExecute = false;
             RequestHandler::SetReady(true);
+            // On warm-snapshot-restore visits the factories are already in
+            // the heap (the snapshot was captured AFTER the cold visit ran
+            // warmupCoreFactories). Re-running on the restored heap touches
+            // VCL/sfx2 statics that the snapshot's mutex state isn't ready
+            // for and can trap inside Execute() shortly after.
+            // Use the C++ atomic (set by JS via wasm_set_warm_restored before
+            // callMain), NOT MAIN_THREAD_EM_ASM_INT — the latter proxies to
+            // the WASM main thread which has already returned by this point,
+            // and the proxy hangs forever from the lokit_main worker.
+            const bool isWarmRestore = (::wasm_is_warm_restored() != 0);
+            if (!isWarmRestore) {
+                try { wasmshim::warmupCoreFactories(xContext); }
+                catch (const css::uno::Exception& e) {
+                    SAL_WARN("desktop.wasm", "warmupCoreFactories threw: " << e.Message);
+                }
+                catch (...) {
+                    SAL_WARN("desktop.wasm", "warmupCoreFactories threw unknown");
+                }
+            } else {
+                MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: warmupCoreFactories skipped (warm-restore)'); });
+            }
             MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: wasmshim:Execute_starting'); });
 #endif
             Execute();

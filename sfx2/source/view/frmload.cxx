@@ -19,6 +19,11 @@
 
 #include <config_collab.h>
 
+#ifdef __EMSCRIPTEN__
+#include <chrono>
+#include <emscripten.h>
+#endif
+
 #include <sfx2/app.hxx>
 #include <sfx2/bindings.hxx>
 #include <sfx2/docfac.hxx>
@@ -623,6 +628,29 @@ sal_Bool SAL_CALL SfxFrameLoader_Impl::load( const Sequence< PropertyValue >& rA
 
     SAL_INFO( "sfx.view", "SfxFrameLoader::load" );
 
+#ifdef __EMSCRIPTEN__
+    // Hot-switch perf instrumentation. See ChildSession.cpp's switchdocument
+    // path; this is the bulk of lo_documentLoadWithOptions and is currently
+    // ~38 s for a same-type swap. Marks are relative to *this* call's entry,
+    // so add them to LOK_LOAD[+...]'s loadComponentFromURL:start offset to
+    // get an absolute timeline against the kit-side SWITCHDOC marks.
+    const auto frmT0 = std::chrono::steady_clock::now();
+    auto frmMs = [&frmT0]() {
+        return (int)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - frmT0).count();
+    };
+// Disabled — was firing 12 MAIN_THREAD_ASYNC_EM_ASM per doc load.
+// During init: warmupCoreFactories(3 loads) + prewarm(1) = 48 messages
+// queued onto JS main thread before Module.__firstDocLoaded gets to run.
+// Each message is a heap-allocated proxy job; queue draining serially
+// can starve the snapshot-capture handler. Re-enable for one-off perf
+// debugging by reverting; leave noop in normal builds.
+#define FRM_MARK(label) ((void)0)
+#else
+#define FRM_MARK(label) ((void)0)
+#endif
+    FRM_MARK("entered");
+
     ::comphelper::NamedValueCollection aDescriptor( rArgs );
 
     // ensure the descriptor contains a referrer
@@ -754,25 +782,33 @@ sal_Bool SAL_CALL SfxFrameLoader_Impl::load( const Sequence< PropertyValue >& rA
                 // Ensure that the current SfxFilter instance is loaded before
                 // going further.  We don't need to do this for external
                 // filter providers.
+                FRM_MARK("filter:detect:start");
                 impl_determineFilter(aDescriptor);
+                FRM_MARK("filter:detect:done");
             }
 
             // create the new doc
             const OUString sServiceName = aDescriptor.getOrDefault( u"DocumentService"_ustr, OUString() );
+            FRM_MARK("model:create:start");
             xModel.set( m_aContext->getServiceManager()->createInstanceWithContext(sServiceName, m_aContext), UNO_QUERY_THROW );
+            FRM_MARK("model:create:done");
 
             // load resp. init it
             const Reference< XLoadable > xLoadable( xModel, UNO_QUERY_THROW );
             if ( bInitNewModel )
             {
+                FRM_MARK("xLoadable:initNew:start");
                 xLoadable->initNew();
+                FRM_MARK("xLoadable:initNew:done");
 
                 impl_removeLoaderArguments( aDescriptor );
                 xModel->attachResource( OUString(), aDescriptor.getPropertyValues() );
             }
             else
             {
+                FRM_MARK("xLoadable:load:start");
                 xLoadable->load( aDescriptor.getPropertyValues() );
+                FRM_MARK("xLoadable:load:done");
             }
         }
         else
@@ -810,8 +846,10 @@ sal_Bool SAL_CALL SfxFrameLoader_Impl::load( const Sequence< PropertyValue >& rA
         const OUString sViewName( xDoc->GetFactory().GetViewFactory( nViewNo ).GetAPIViewName() );
 
         // plug the document into the frame
+        FRM_MARK("createDocumentView:start");
         Reference<XController2> xController =
             impl_createDocumentView( xModel, _rTargetFrame, aViewCreationArgs, sViewName );
+        FRM_MARK("createDocumentView:done");
 
         Reference<lang::XInitialization> xInit(xController, UNO_QUERY);
         if (xInit.is())
@@ -819,6 +857,8 @@ sal_Bool SAL_CALL SfxFrameLoader_Impl::load( const Sequence< PropertyValue >& rA
             uno::Sequence<uno::Any> aArgs; // empty for now.
             xInit->initialize(aArgs);
         }
+        FRM_MARK("complete");
+#undef FRM_MARK
 
         bLoadSuccess = true;
     }
