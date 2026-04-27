@@ -189,6 +189,25 @@ bool isQuiesce()
     return detail::g_quiesce.load(std::memory_order_acquire) != 0;
 }
 
+void waitForCoolwsdResume()
+{
+    using namespace std::chrono;
+    std::unique_lock<std::mutex> lk(detail::g_quiesceMutex);
+    bool ok = detail::g_coolwsdResumeCV.wait_for(
+        lk, seconds(60),
+        []{ return detail::g_coolwsdResume.load(std::memory_order_acquire); });
+    if (!ok)
+    {
+        MAIN_THREAD_ASYNC_EM_ASM({
+            console.warn('Plan C: waitForCoolwsdResume timed out');
+        });
+    }
+    // Reset the latch so the next quiesce cycle starts fresh. The kit
+    // thread also resets g_quiesce to 0 in its post-snapshot block.
+    detail::g_coolwsdResume.store(false, std::memory_order_release);
+    detail::g_coolwsdParked.store(false, std::memory_order_release);
+}
+
 void firstDocPainted(std::string_view docTypeHint)
 {
     using namespace std::chrono;
