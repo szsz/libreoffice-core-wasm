@@ -633,7 +633,13 @@ sal_Bool SAL_CALL SfxFrameLoader_Impl::load( const Sequence< PropertyValue >& rA
         return (int)std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - frmT0).count();
     };
-#define FRM_MARK(label) MAIN_THREAD_ASYNC_EM_ASM({ console.log('FRMLOAD[+' + $0 + 'ms] ' + UTF8ToString($1)); }, frmMs(), label)
+// Disabled — was firing 12 MAIN_THREAD_ASYNC_EM_ASM per doc load.
+// During init: warmupCoreFactories(3 loads) + prewarm(1) = 48 messages
+// queued onto JS main thread before Module.__firstDocLoaded gets to run.
+// Each message is a heap-allocated proxy job; queue draining serially
+// can starve the snapshot-capture handler. Re-enable for one-off perf
+// debugging by reverting; leave noop in normal builds.
+#define FRM_MARK(label) ((void)0)
 #else
 #define FRM_MARK(label) ((void)0)
 #endif
