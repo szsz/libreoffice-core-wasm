@@ -288,6 +288,38 @@ extern "C" EMSCRIPTEN_KEEPALIVE int wasm_is_plan_c_enabled()
     return wasmshim::detail::g_preloadDisabled ? 0 : 1;
 }
 
+/// Plan C warm-restore — called by deploy.sh's restore inject between
+/// HEAPU8.set and callMain. The captured snapshot froze the kit thread
+/// blocked in g_phase2CV.wait_for and COOLWSD parked on g_coolwsdResumeCV.
+/// On warm restore those threads no longer exist (Web Workers don't survive
+/// across page loads) but their pthread structs are still referenced from
+/// the CV waiter lists in heap. A new thread doing notify_all/wait would
+/// dereference the stale pointers and trap with "RuntimeError: unreachable".
+///
+/// Re-initialize the mutex+CV pairs via placement-new so the new threads
+/// see a clean state. g_phase2Triggered stays true so firstDocPainted's
+/// CAS check still no-ops on warm visits. The other atomics are reset to
+/// their cold defaults so the COOLWSD self-park branch in COOLWSD.cpp
+/// doesn't see a stale "already parked" signal.
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_warm_restore_reset()
+{
+    using namespace wasmshim::detail;
+    new (&g_phase2Mutex)         std::mutex();
+    new (&g_phase2CV)            std::condition_variable();
+    new (&g_quiesceMutex)        std::mutex();
+    new (&g_coolwsdParkedCV)     std::condition_variable();
+    new (&g_coolwsdResumeCV)     std::condition_variable();
+    new (&g_snapshotMutex)       std::mutex();
+    new (&g_snapshotCV)          std::condition_variable();
+
+    g_phase2ResumeRequested = false; // cold default; firstDocPainted
+                                     // never re-fires anyway (CAS one-shot).
+    g_coolwsdParked.store(false, std::memory_order_release);
+    g_coolwsdResume.store(false, std::memory_order_release);
+    g_quiesce.store(0,            std::memory_order_release);
+    g_snapshotDone = true;           // unstick any stray waiter
+}
+
 /// Called from the deploy.sh-injected restore block on warm-snapshot
 /// visits, after HEAPU8.set but before callMain. Lets C++ Desktop::Main
 /// (running on the lokit_main worker thread later) read the warm-restore
