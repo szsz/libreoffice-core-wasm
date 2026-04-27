@@ -2827,13 +2827,7 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
         return (int)std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - lokT0).count();
     };
-// Disabled — see FRM_MARK rationale in sfx2/source/view/frmload.cxx.
-// LOK_LOAD_MARK fires 4-5 times per documentLoadWithOptions; combined
-// with FRM_MARK (12/load) the JS main-thread proxy queue gets so deep
-// during cold init that Module.__firstDocLoaded (the snapshot capture
-// trigger) is queued behind ~50 console.log calls, delaying snapshot
-// save by tens of seconds.
-#define LOK_LOAD_MARK(label) ((void)lokMs(), (void)0)
+#define LOK_LOAD_MARK(label) MAIN_THREAD_ASYNC_EM_ASM({ console.log('LOK_LOAD[+' + $0 + 'ms] ' + UTF8ToString($1)); }, lokMs(), label)
 #else
 #define LOK_LOAD_MARK(label) ((void)0)
 #endif
