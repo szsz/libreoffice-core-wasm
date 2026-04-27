@@ -19,6 +19,7 @@
 #include <com/sun/star/frame/Desktop.hpp>
 #include <com/sun/star/lang/XComponent.hpp>
 #include <rtl/ustring.hxx>
+#include <vcl/svapp.hxx>
 
 #include <emscripten.h>
 
@@ -249,15 +250,28 @@ void firstDocPainted(std::string_view docTypeHint)
     // 120s ceiling: longer than the conservative Cache.put estimate so
     // even slow disks don't timeout, but short enough to recover from a
     // hung JS handler (closed tab, exception during capture).
-    std::unique_lock<std::mutex> lk(detail::g_phase2Mutex);
-    bool ok = detail::g_phase2CV.wait_for(
-        lk, seconds(120),
-        []{ return detail::g_phase2ResumeRequested; });
-    if (!ok)
+    //
+    // Critical: release the SolarMutex before parking. The kit thread
+    // entered firstDocPainted from inside ChildSession::loadDocument
+    // which runs under the SolarMutex (via VCL Execute). If we wait
+    // here while still holding it, the snapshot captures the SolarMutex
+    // with m_nCount > 0 and m_nThreadId pointing at this (cold) thread.
+    // A fresh thread on warm-restore would then trap inside doRelease's
+    // !IsCurrentThread() abort. Releasing here lets the captured state
+    // be unowned, so warm threads can acquire/release cleanly with no
+    // patch-up on the restore side.
     {
-        MAIN_THREAD_ASYNC_EM_ASM({
-            console.warn('wasmshim::firstDocPainted: resume timeout, proceeding');
-        });
+        SolarMutexReleaser releaser;
+        std::unique_lock<std::mutex> lk(detail::g_phase2Mutex);
+        bool ok = detail::g_phase2CV.wait_for(
+            lk, seconds(120),
+            []{ return detail::g_phase2ResumeRequested; });
+        if (!ok)
+        {
+            MAIN_THREAD_ASYNC_EM_ASM({
+                console.warn('wasmshim::firstDocPainted: resume timeout, proceeding');
+            });
+        }
     }
 }
 

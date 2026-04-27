@@ -64,6 +64,13 @@ public:
     /// Help components to get the SolarMutex easily.
     static SolarMutex *get();
 
+#ifdef __EMSCRIPTEN__
+    /// Plan C warm-restore: reset captured ownership state from the
+    /// cold visit so a fresh thread can acquire/release without
+    /// hitting the IsCurrentThread() abort in doRelease.
+    void wasmWarmRestoreReset();
+#endif
+
 protected:
     virtual sal_uInt32 doRelease( bool bUnlockAll );
     virtual void doAcquire( sal_uInt32 nLockCount );
