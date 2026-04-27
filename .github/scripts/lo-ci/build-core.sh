@@ -92,7 +92,8 @@ docker rm -f "$CI_CONTAINER" >/dev/null 2>&1 || true
 # /usr/local has POCO + zstd + expat + … that the LO build links against.
 docker run -d \
     --name "$CI_CONTAINER" \
-    --memory=14g \
+    --memory=16g \
+    --memory-swap=28g \
     -v "$WORKSPACE":/lo/core \
     -v "$CORE_BUILD_HOST":/lo/core-build \
     -v "$TARBALLS_HOST":/lo/core/external/tarballs \
@@ -101,6 +102,10 @@ docker run -d \
     -e CCACHE_MAXSIZE=20G \
     "$CI_IMAGE" \
     sleep infinity
+# Memory: host has 18 GiB RAM + 19 GiB swap. The --memory=14g default got
+# OOM-killed (exit 137) during LO's parallel link phase when several
+# wasm-opt / clang++ processes peak together. Bump to 16g RAM and let
+# the container spill up to ~12 GiB into swap if needed.
 
 # external/tarballs/ overlay note: $WORKSPACE/external/tarballs/ is gitignored
 # (only `download.lst` lists the URLs+hashes; the actual archives are not in
