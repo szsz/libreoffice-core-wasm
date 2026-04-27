@@ -24,6 +24,7 @@
 
 #include <assert.h>
 #include <cstdlib>
+#include <new>
 
 namespace comphelper {
 
@@ -57,8 +58,26 @@ void SolarMutex::doAcquire( const sal_uInt32 nLockCount )
     m_nCount += nLockCount;
 }
 
+#ifdef __EMSCRIPTEN__
+extern "C" int wasm_is_warm_restored();
+#endif
+
 sal_uInt32 SolarMutex::doRelease( bool bUnlockAll )
 {
+#ifdef __EMSCRIPTEN__
+    // Plan C warm-restore: the snapshot captured the SolarMutex held by
+    // a cold-visit thread that no longer exists. The first VCL main-loop
+    // iteration after restore calls doRelease() and would abort here.
+    // Only short-circuit on warm — never on cold, so genuine bugs still
+    // surface. Adopt thread ownership and skip the OS-mutex release
+    // (the underlying m_aMutex was placement-new'd unlocked by
+    // wasmWarmRestoreReset, so calling release() would underflow).
+    if ( wasm_is_warm_restored() == 1 && (!IsCurrentThread() || m_nCount == 0) )
+    {
+        m_nThreadId = std::this_thread::get_id();
+        return 0;
+    }
+#endif
     if ( !IsCurrentThread() )
         std::abort();
     if ( m_nCount == 0 )
@@ -97,6 +116,30 @@ bool SolarMutex::tryToAcquire()
         return false;
 }
 
+#ifdef __EMSCRIPTEN__
+// Plan C warm-restore — the SolarMutex captured in the snapshot has
+// m_nThreadId pointing at a thread from the cold visit and m_nCount > 0.
+// On warm visit a fresh thread tries to release it, fails the
+// IsCurrentThread() check in doRelease(), and aborts. Forcefully clear
+// the captured ownership state and reinit the underlying osl::Mutex via
+// placement-new so the new threads see a clean unlocked mutex.
+void SolarMutex::wasmWarmRestoreReset()
+{
+    m_nCount = 0;
+    m_nThreadId.store(std::thread::id());
+    new (&m_aMutex) osl::Mutex();
+}
+#endif
+
 } // namespace comphelper
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_warm_restore_solar_mutex_reset()
+{
+    auto* p = comphelper::SolarMutex::get();
+    if (p) p->wasmWarmRestoreReset();
+}
+#endif
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
