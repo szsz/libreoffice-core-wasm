@@ -26,8 +26,9 @@ LOCK="$STATE_DIR/host.lock"
 
 CORE_BUILD_HOST="$STATE_DIR/lo-core-build"
 CCACHE_HOST="$STATE_DIR/ccache"
+TARBALLS_HOST="$STATE_DIR/lo-tarballs"   # downloaded externals (zlib, libpng, ICU, …) — ~10 GB
 
-mkdir -p "$STATE_DIR" "$CORE_BUILD_HOST" "$CCACHE_HOST"
+mkdir -p "$STATE_DIR" "$CORE_BUILD_HOST" "$CCACHE_HOST" "$TARBALLS_HOST"
 
 # ── Cleanup trap: container runs as root and writes into the bind-mounted
 # workspace (autogen.sh updates m4/, autom4te.cache/, externals download,
@@ -88,11 +89,18 @@ docker run -d \
     --memory=14g \
     -v "$WORKSPACE":/lo/core \
     -v "$CORE_BUILD_HOST":/lo/core-build \
+    -v "$TARBALLS_HOST":/lo/core/external/tarballs \
     -v "$CCACHE_HOST":/root/.ccache \
     -e CCACHE_DIR=/root/.ccache \
     -e CCACHE_MAXSIZE=20G \
     "$CI_IMAGE" \
     sleep infinity
+
+# external/tarballs/ overlay note: $WORKSPACE/external/tarballs/ is gitignored
+# (only `download.lst` lists the URLs+hashes; the actual archives are not in
+# git). actions/checkout deletes any leftovers from prior runs, so without
+# this persistent mount the LO build re-downloads ~10 GB every run. The
+# bind-mount overlays the empty source path with our state-dir cache.
 
 # Sanity check: POCO with -fwasm-exceptions must be present (baked into image).
 if ! docker exec "$CI_CONTAINER" test -f /usr/local/.poco-fwasm-exceptions.done; then
