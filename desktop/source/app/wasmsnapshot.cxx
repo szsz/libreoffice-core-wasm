@@ -219,6 +219,18 @@ void firstDocPainted(std::string_view docTypeHint)
     if (!detail::g_phase2Triggered.compare_exchange_strong(expected, true))
         return;
 
+    // Killswitch fast-path: when the snapshot subsystem is disabled
+    // (g_preloadDisabled set by JS at onRuntimeInitialized) there's no
+    // value in queueing a MAIN_THREAD_ASYNC_EM_ASM and blocking the kit
+    // thread on g_phase2CV — JS would only call wasm_snapshot_failed
+    // immediately. The async EM_ASM hop and CV wait can serialize behind
+    // a busy main thread for tens of seconds (observed: 33 s gap
+    // between switchdoc click and snapshot:fail mark on first hot-switch
+    // after a cold-reload), pushing the next switchdocument out by the
+    // same amount. Skip it entirely.
+    if (detail::g_preloadDisabled)
+        return;
+
     // Snapshot the docType into a heap string the EM_ASM payload can
     // reference safely (it crosses to the JS main thread async).
     static std::string s_docType;
@@ -263,6 +275,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
 extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_preload_disabled(int disabled)
 {
     wasmshim::detail::g_preloadDisabled = (disabled != 0);
+}
+
+/// Plan C — kit thread asks "is the snapshot subsystem enabled?" before
+/// driving the quiesce-and-park dance around firstDocPainted. We tie
+/// this to the same JS-side switch that controls preload (g_preloadDisabled).
+/// SNAPSHOT_DISABLED=true → JS calls wasm_set_preload_disabled(1) → returns 0.
+/// SNAPSHOT_DISABLED=false → JS leaves preload enabled → returns 1.
+/// Same gate, no new JS plumbing needed.
+extern "C" EMSCRIPTEN_KEEPALIVE int wasm_is_plan_c_enabled()
+{
+    return wasmshim::detail::g_preloadDisabled ? 0 : 1;
 }
 
 /// Called from the deploy.sh-injected restore block on warm-snapshot
