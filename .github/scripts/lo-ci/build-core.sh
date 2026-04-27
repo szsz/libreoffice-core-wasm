@@ -61,20 +61,26 @@ echo "Acquiring host build lock ($LOCK) …"
 flock 9
 echo "[OK] Lock acquired."
 
-# ── Ensure CI image exists with current Dockerfile content ─────
-DOCKERFILE_PATH="$WORKSPACE/.github/docker/Dockerfile"
-if [[ ! -f "$DOCKERFILE_PATH" ]]; then
-    echo "ERROR: $DOCKERFILE_PATH missing." >&2; exit 1
+# ── Ensure CI image exists with current Dockerfile + patches content ─────
+# Hash the WHOLE .github/docker/ directory (Dockerfile + COPY'd .patch / .diff
+# files). Hashing only the Dockerfile missed patch edits, so a fix in the
+# poco patch silently kept reusing the stale image.
+DOCKER_CTX="$WORKSPACE/.github/docker"
+if [[ ! -f "$DOCKER_CTX/Dockerfile" ]]; then
+    echo "ERROR: $DOCKER_CTX/Dockerfile missing." >&2; exit 1
 fi
-DOCKERFILE_HASH="$(sha256sum "$DOCKERFILE_PATH" | cut -c1-12)"
+DOCKERFILE_HASH="$( (cd "$DOCKER_CTX" && find . -type f -print0 | sort -z | xargs -0 sha256sum) | sha256sum | cut -c1-12 )"
 CI_IMAGE="lo-wasm-ci:$DOCKERFILE_HASH"
 
 if ! docker image inspect "$CI_IMAGE" >/dev/null 2>&1; then
-    echo "--- Building $CI_IMAGE from .github/docker/Dockerfile ---"
-    docker build -t "$CI_IMAGE" -t lo-wasm-ci:latest "$WORKSPACE/.github/docker"
+    echo "--- Building $CI_IMAGE from .github/docker/ ---"
+    docker build -t "$CI_IMAGE" -t lo-wasm-ci:latest "$DOCKER_CTX"
     echo "[OK] Built $CI_IMAGE"
 else
-    echo "[OK] CI image $CI_IMAGE present (Dockerfile unchanged)."
+    # Always update :latest to point at the current hash, in case a previous
+    # run from a different (older) commit left :latest pointing elsewhere.
+    docker tag "$CI_IMAGE" lo-wasm-ci:latest
+    echo "[OK] CI image $CI_IMAGE present (Dockerfile+patches unchanged)."
 fi
 
 # ── Recreate the build container fresh ────────────────────────
