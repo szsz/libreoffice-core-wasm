@@ -64,6 +64,12 @@ void firstDocPainted(std::string_view docTypeHint);
 /// before HEAPU8 capture. Lock-free atomic load.
 bool isQuiesce();
 
+/// Plan C — called by the COOLWSD thread after it has joined its own
+/// dependent SocketPolls and signalled wasm_coolwsd_parked. Blocks until
+/// JS (warm) or the kit thread (cold) calls wasm_coolwsd_resume.
+/// 60s timeout to break a deadlock if the resume signal is lost.
+void waitForCoolwsdResume();
+
 } // namespace wasmshim
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
