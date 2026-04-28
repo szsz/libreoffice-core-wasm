@@ -250,7 +250,8 @@ void firstDocPainted(std::string_view docTypeHint)
     // Offset is added directly to the cold session's wall time, but
     // saves the user from a watchdog-triggered cold reload (~50 s) on
     // the warm visit, so net is hugely positive when this works.
-    std::this_thread::sleep_for(seconds(2));
+    std::this_thread::sleep_for(seconds(5));  // iter20 measured 2 s
+                                              // insufficient for calc.
 
     MAIN_THREAD_ASYNC_EM_ASM({
         if (Module && typeof Module.__firstDocLoaded === 'function') {
