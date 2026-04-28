@@ -131,6 +131,22 @@ ThreadPool& ThreadPool::getSharedOptimalPool()
     return *GetStaticThreadPool();
 }
 
+#if defined(EMSCRIPTEN)
+extern "C" __attribute__((used)) void wasm_warm_restore_threadpool_reset()
+{
+    // The captured ThreadPool's maWorkers vector references rtl::Reference
+    // objects whose underlying salhelper threads correspond to dead cold
+    // pthread descriptors — calling p.reset() (which destructs the captured
+    // pool) would invoke ~ThreadPool() and try to join those dead pthreads,
+    // hanging the warm session. Placement-new a fresh shared_ptr over the
+    // function-local static, leaking the captured pool. The leak is bounded
+    // (one pool per page-load) and never triggers a destructor.
+    auto& p = GetStaticThreadPool();
+    new (&p) std::shared_ptr<ThreadPool>(
+        std::make_shared<ThreadPool>(ThreadPool::getPreferredConcurrency()));
+}
+#endif
+
 std::size_t ThreadPool::getPreferredConcurrency()
 {
     static std::size_t ThreadCount = []()
