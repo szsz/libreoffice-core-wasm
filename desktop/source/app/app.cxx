@@ -188,6 +188,11 @@ using namespace ::com::sun::star::container;
 
 #ifdef __EMSCRIPTEN__
 extern "C" int wasm_is_warm_restored();
+extern "C" int wasm_is_plan_c_enabled();
+extern "C" void wasm_set_quiesce(int);
+extern "C" void wasm_quiesce_wake_main();
+extern "C" void wasm_wait_coolwsd_parked();
+extern "C" void wasm_coolwsd_resume();
 #endif
 
 namespace desktop
@@ -1717,6 +1722,52 @@ int Desktop::Main()
                 }
                 catch (...) {
                     SAL_WARN("desktop.wasm", "warmupCoreFactories threw unknown");
+                }
+
+                // Recommendation 6.5: snapshot capture point shift.
+                //
+                // Previously the snapshot was captured from
+                // kit/ChildSession.cpp inside loadDocument, AFTER the
+                // user's first document was loaded. That meant the
+                // captured state included a fresh hot-switch's worker
+                // pthreads still in transient mailbox / TLS init states
+                // ~22% of the time (concentrated on calc), producing a
+                // snapshot whose warm-restore hung at COOLWSD pthread
+                // dispatch (see project_warm_pthread_flake.md).
+                //
+                // Now we trigger the capture HERE — after factories are
+                // warmed but BEFORE any user doc loads. The captured
+                // state has writer/calc/impress factories in their
+                // dispose-completed state but no user doc, so it's
+                // deterministic and doc-type-independent. The warm
+                // session's user doc loads through the cold path, but
+                // with all factories already in heap that's fast.
+                //
+                // The kit-side firstDocPainted call in ChildSession
+                // becomes a no-op (atomic CAS already triggered) so
+                // this can ship without removing it.
+                MAIN_THREAD_ASYNC_EM_ASM({
+                    console.log('TIMING: app: 6.5 capture point — '
+                                + 'warmup-only snapshot trigger');
+                });
+
+                const bool planC = (::wasm_is_plan_c_enabled() == 1);
+                if (planC) {
+                    ::wasm_set_quiesce(1);
+                    ::wasm_quiesce_wake_main();
+                    ::wasm_wait_coolwsd_parked();
+                    MAIN_THREAD_ASYNC_EM_ASM({
+                        console.log('TIMING: app: coolwsd parked, '
+                                    + 'calling firstDocPainted(warmup-only)');
+                    });
+                }
+                wasmshim::firstDocPainted(std::string_view("warmup-only"));
+                MAIN_THREAD_ASYNC_EM_ASM({
+                    console.log('TIMING: app: firstDocPainted returned');
+                });
+                if (planC) {
+                    ::wasm_set_quiesce(0);
+                    ::wasm_coolwsd_resume();
                 }
             } else {
                 MAIN_THREAD_ASYNC_EM_ASM({ console.log('TIMING: warmupCoreFactories skipped (warm-restore)'); });
