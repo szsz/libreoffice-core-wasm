@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include <com/sun/star/beans/PropertyValue.hpp>
 #include <com/sun/star/frame/Desktop.hpp>
@@ -236,6 +237,20 @@ void firstDocPainted(std::string_view docTypeHint)
     // reference safely (it crosses to the JS main thread async).
     static std::string s_docType;
     s_docType.assign(docTypeHint.data(), docTypeHint.size());
+
+    // Settle delay before triggering capture. Iter6–18 measured a ~50%
+    // lockstep flake on calc/impress (less so writer): the kit thread
+    // calls firstDocPainted *during* the user doc's loadDocument, which
+    // means a fresh hot-switch's worker pthreads may still be in
+    // transient mailbox / TLS init states when MAIN_THREAD_ASYNC_EM_ASM
+    // queues the capture. Capturing then produces a snapshot whose
+    // pthread descriptors break warm restore (worker reports cmd=loaded
+    // but start_routine never dispatches). Sleep here gives all freshly-
+    // spawned threads time to reach a stable parked / idle state.
+    // Offset is added directly to the cold session's wall time, but
+    // saves the user from a watchdog-triggered cold reload (~50 s) on
+    // the warm visit, so net is hugely positive when this works.
+    std::this_thread::sleep_for(seconds(2));
 
     MAIN_THREAD_ASYNC_EM_ASM({
         if (Module && typeof Module.__firstDocLoaded === 'function') {
