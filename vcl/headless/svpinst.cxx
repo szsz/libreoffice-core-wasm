@@ -419,6 +419,45 @@ bool SvpSalYieldMutex::IsCurrentThread() const
         return SalYieldMutex::IsCurrentThread();
 }
 
+#ifdef __EMSCRIPTEN__
+// Plan C warm-restore: the captured snapshot froze SvpSalYieldMutex's seven
+// internal mutex/CV/state members with pthread waiter-list pointers that
+// reference the cold-visit thread (now dead). The first VCL/sfx2 op on a
+// fresh warm thread tries to lock m_WakeUpMainMutex or wait on
+// m_WakeUpMainCond and either deadlocks on Atomics.wait or traps with
+// "RuntimeError: unreachable" inside the pthread runtime. Placement-new each
+// member so the warm-side sees freshly-initialised objects with empty waiter
+// lists. Reset the bool/state flags too — m_wakeUpMain may have been left
+// true at capture, and m_Request != NONE would dispatch a stale request.
+void SvpSalYieldMutex::wasmWarmRestoreReset()
+{
+    new (&m_FeedbackMutex)              std::mutex();
+    new (&m_FeedbackPipe)               std::queue<bool>();
+    new (&m_FeedbackCV)                 std::condition_variable();
+    new (&m_NonMainWaitingYieldCond)    osl::Condition();
+    new (&m_WakeUpMainMutex)            std::mutex();
+    new (&m_WakeUpMainCond)             std::condition_variable();
+    m_bNoYieldLock = false;
+    m_wakeUpMain   = false;
+    m_Request      = SvpRequest::NONE;
+}
+
+#include <emscripten.h>
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_warm_restore_yield_mutex_reset()
+{
+    if (auto* p = SvpSalInstance::s_pDefaultInstance)
+    {
+        if (auto* m = dynamic_cast<SvpSalYieldMutex*>(p->GetYieldMutex()))
+            m->wasmWarmRestoreReset();
+        // Refresh m_MainThread to the current pthread — the captured value
+        // points at the cold lokit_main worker that no longer exists.
+        // Without this, IsMainThread() returns false on every warm thread
+        // and SvpSalYieldMutex::doRelease takes the wrong branch.
+        p->updateMainThread();
+    }
+}
+#endif
+
 bool SvpSalInstance::IsMainThread() const
 {
     return osl::Thread::getCurrentIdentifier() == m_MainThread;

@@ -82,6 +82,13 @@ public:
     virtual ~SvpSalYieldMutex() override;
 
     virtual bool IsCurrentThread() const override;
+
+#ifdef __EMSCRIPTEN__
+    // Plan C warm-restore: placement-new the seven internal members so
+    // their pthread waiter-lists (which reference dead cold threads) are
+    // cleared. Called from JS warm-restore inject before callMain.
+    void wasmWarmRestoreReset();
+#endif
 };
 
 // NOTE: the functions IsMainThread, DoYield and Wakeup *require* the use of
