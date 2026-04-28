@@ -14,11 +14,13 @@
 #include <condition_variable>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include <com/sun/star/beans/PropertyValue.hpp>
 #include <com/sun/star/frame/Desktop.hpp>
 #include <com/sun/star/lang/XComponent.hpp>
 #include <rtl/ustring.hxx>
+#include <vcl/svapp.hxx>
 
 #include <emscripten.h>
 
@@ -219,10 +221,42 @@ void firstDocPainted(std::string_view docTypeHint)
     if (!detail::g_phase2Triggered.compare_exchange_strong(expected, true))
         return;
 
+    // Killswitch fast-path: when the snapshot subsystem is disabled
+    // (g_preloadDisabled set by JS at onRuntimeInitialized) there's no
+    // value in queueing a MAIN_THREAD_ASYNC_EM_ASM and blocking the kit
+    // thread on g_phase2CV — JS would only call wasm_snapshot_failed
+    // immediately. The async EM_ASM hop and CV wait can serialize behind
+    // a busy main thread for tens of seconds (observed: 33 s gap
+    // between switchdoc click and snapshot:fail mark on first hot-switch
+    // after a cold-reload), pushing the next switchdocument out by the
+    // same amount. Skip it entirely.
+    if (detail::g_preloadDisabled)
+        return;
+
     // Snapshot the docType into a heap string the EM_ASM payload can
     // reference safely (it crosses to the JS main thread async).
     static std::string s_docType;
     s_docType.assign(docTypeHint.data(), docTypeHint.size());
+
+    // Settle delay before triggering capture. Iter6–18 measured a ~50%
+    // lockstep flake on calc/impress (less so writer): the kit thread
+    // calls firstDocPainted *during* the user doc's loadDocument, which
+    // means a fresh hot-switch's worker pthreads may still be in
+    // transient mailbox / TLS init states when MAIN_THREAD_ASYNC_EM_ASM
+    // queues the capture. Capturing then produces a snapshot whose
+    // pthread descriptors break warm restore (worker reports cmd=loaded
+    // but start_routine never dispatches). Sleep here gives all freshly-
+    // spawned threads time to reach a stable parked / idle state.
+    // Offset is added directly to the cold session's wall time, but
+    // saves the user from a watchdog-triggered cold reload (~50 s) on
+    // the warm visit, so net is hugely positive when this works.
+    std::this_thread::sleep_for(seconds(5));  // iter20–23: 2/5/10s all
+                                              // give ~22% calc flake.
+                                              // 5s is a compromise — bumping
+                                              // higher doesn't help, lower
+                                              // marginally degrades.
+                                              // Watchdog (wasm-loader.js)
+                                              // backstops the residual.
 
     MAIN_THREAD_ASYNC_EM_ASM({
         if (Module && typeof Module.__firstDocLoaded === 'function') {
@@ -237,15 +271,28 @@ void firstDocPainted(std::string_view docTypeHint)
     // 120s ceiling: longer than the conservative Cache.put estimate so
     // even slow disks don't timeout, but short enough to recover from a
     // hung JS handler (closed tab, exception during capture).
-    std::unique_lock<std::mutex> lk(detail::g_phase2Mutex);
-    bool ok = detail::g_phase2CV.wait_for(
-        lk, seconds(120),
-        []{ return detail::g_phase2ResumeRequested; });
-    if (!ok)
+    //
+    // Critical: release the SolarMutex before parking. The kit thread
+    // entered firstDocPainted from inside ChildSession::loadDocument
+    // which runs under the SolarMutex (via VCL Execute). If we wait
+    // here while still holding it, the snapshot captures the SolarMutex
+    // with m_nCount > 0 and m_nThreadId pointing at this (cold) thread.
+    // A fresh thread on warm-restore would then trap inside doRelease's
+    // !IsCurrentThread() abort. Releasing here lets the captured state
+    // be unowned, so warm threads can acquire/release cleanly with no
+    // patch-up on the restore side.
     {
-        MAIN_THREAD_ASYNC_EM_ASM({
-            console.warn('wasmshim::firstDocPainted: resume timeout, proceeding');
-        });
+        SolarMutexReleaser releaser;
+        std::unique_lock<std::mutex> lk(detail::g_phase2Mutex);
+        bool ok = detail::g_phase2CV.wait_for(
+            lk, seconds(120),
+            []{ return detail::g_phase2ResumeRequested; });
+        if (!ok)
+        {
+            MAIN_THREAD_ASYNC_EM_ASM({
+                console.warn('wasmshim::firstDocPainted: resume timeout, proceeding');
+            });
+        }
     }
 }
 
@@ -263,6 +310,49 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_complete()
 extern "C" EMSCRIPTEN_KEEPALIVE void wasm_set_preload_disabled(int disabled)
 {
     wasmshim::detail::g_preloadDisabled = (disabled != 0);
+}
+
+/// Plan C — kit thread asks "is the snapshot subsystem enabled?" before
+/// driving the quiesce-and-park dance around firstDocPainted. We tie
+/// this to the same JS-side switch that controls preload (g_preloadDisabled).
+/// SNAPSHOT_DISABLED=true → JS calls wasm_set_preload_disabled(1) → returns 0.
+/// SNAPSHOT_DISABLED=false → JS leaves preload enabled → returns 1.
+/// Same gate, no new JS plumbing needed.
+extern "C" EMSCRIPTEN_KEEPALIVE int wasm_is_plan_c_enabled()
+{
+    return wasmshim::detail::g_preloadDisabled ? 0 : 1;
+}
+
+/// Plan C warm-restore — called by deploy.sh's restore inject between
+/// HEAPU8.set and callMain. The captured snapshot froze the kit thread
+/// blocked in g_phase2CV.wait_for and COOLWSD parked on g_coolwsdResumeCV.
+/// On warm restore those threads no longer exist (Web Workers don't survive
+/// across page loads) but their pthread structs are still referenced from
+/// the CV waiter lists in heap. A new thread doing notify_all/wait would
+/// dereference the stale pointers and trap with "RuntimeError: unreachable".
+///
+/// Re-initialize the mutex+CV pairs via placement-new so the new threads
+/// see a clean state. g_phase2Triggered stays true so firstDocPainted's
+/// CAS check still no-ops on warm visits. The other atomics are reset to
+/// their cold defaults so the COOLWSD self-park branch in COOLWSD.cpp
+/// doesn't see a stale "already parked" signal.
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_warm_restore_reset()
+{
+    using namespace wasmshim::detail;
+    new (&g_phase2Mutex)         std::mutex();
+    new (&g_phase2CV)            std::condition_variable();
+    new (&g_quiesceMutex)        std::mutex();
+    new (&g_coolwsdParkedCV)     std::condition_variable();
+    new (&g_coolwsdResumeCV)     std::condition_variable();
+    new (&g_snapshotMutex)       std::mutex();
+    new (&g_snapshotCV)          std::condition_variable();
+
+    g_phase2ResumeRequested = false; // cold default; firstDocPainted
+                                     // never re-fires anyway (CAS one-shot).
+    g_coolwsdParked.store(false, std::memory_order_release);
+    g_coolwsdResume.store(false, std::memory_order_release);
+    g_quiesce.store(0,            std::memory_order_release);
+    g_snapshotDone = true;           // unstick any stray waiter
 }
 
 /// Called from the deploy.sh-injected restore block on warm-snapshot
