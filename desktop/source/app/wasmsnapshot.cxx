@@ -250,13 +250,12 @@ void firstDocPainted(std::string_view docTypeHint)
     // Offset is added directly to the cold session's wall time, but
     // saves the user from a watchdog-triggered cold reload (~50 s) on
     // the warm visit, so net is hugely positive when this works.
-    std::this_thread::sleep_for(seconds(5));  // iter20–23: 2/5/10s all
-                                              // give ~22% calc flake.
-                                              // 5s is a compromise — bumping
-                                              // higher doesn't help, lower
-                                              // marginally degrades.
-                                              // Watchdog (wasm-loader.js)
-                                              // backstops the residual.
+    // 3 s settle. Iter29 measured: 1 s causes warm-impress to regress
+    // from ~10 s to ~18 s, suggesting captured state is partial when
+    // capture fires too soon after warmupCoreFactories returns. Iter28
+    // (5 s) had warm-impress at 9–11 s. 3 s is the empirical compromise
+    // — saves 2 s on cold vs iter28 without regressing warm.
+    std::this_thread::sleep_for(seconds(3));
 
     MAIN_THREAD_ASYNC_EM_ASM({
         if (Module && typeof Module.__firstDocLoaded === 'function') {
