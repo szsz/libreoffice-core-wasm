@@ -455,4 +455,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_snapshot_failed(int reason)
     wasm_first_doc_snapshot_resume();
 }
 
+/// Weak no-op stub so LO core's standalone soffice.js executable can link
+/// without Online. The strong implementation in Online's wsd/COOLWSD.cpp
+/// (which wakes COOLWSD's main poll loop) overrides this when LO+Online
+/// are linked together. desktop/source/app/app.cxx calls this from the
+/// planC branch and has to compile in either configuration.
+__attribute__((weak)) extern "C" EMSCRIPTEN_KEEPALIVE void wasm_quiesce_wake_main()
+{
+    // Standalone soffice.js: no COOLWSD, nothing to wake.
+}
+
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
