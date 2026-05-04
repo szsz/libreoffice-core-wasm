@@ -1,9 +1,20 @@
 name: LibreOffice WASM build
 
+# CI is the ONLY supported path to a published LO build. Two triggers:
+#   1. pull_request to `dev` — green build auto-merges.
+#   2. workflow_dispatch — manual rebuild of a specific commit (input).
+# Direct `push: dev` is intentionally NOT a trigger — merges happen via the
+# auto-merge step below, never by hand. See online repo wasm/CLAUDE.md
+# ("How to make changes to LibreOffice").
 on:
-  push:
+  pull_request:
     branches: [dev]
   workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit SHA to rebuild (default: HEAD of selected branch)'
+        required: false
+        default: ''
 
 env:
   AZURE_STORAGE_ACCOUNT: coolwasmfiles
@@ -11,12 +22,15 @@ env:
   STATIC_SITE_BASE: https://coolwasmfiles.z6.web.core.windows.net
 
 concurrency:
-  group: lo-ci-${{ github.ref }}
+  group: lo-ci-${{ github.event.pull_request.head.sha || github.event.inputs.sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
   build-publish:
     runs-on: [self-hosted, wasm-build]
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       # Reclaim workspace ownership before checkout. build-core.sh runs inside
       # docker as root and writes to bind-mounted paths (autom4te.cache, m4/,
@@ -28,6 +42,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.event.inputs.sha || github.sha }}
 
       - name: Resolve BUILD_ID
         id: ids
@@ -46,6 +62,16 @@ jobs:
       - name: Package + upload artefacts
         env:
           BUILD_ID: ${{ steps.ids.outputs.build_id }}
-          GIT_SHA: ${{ github.sha }}
-          GIT_REF: ${{ github.ref }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.event.inputs.sha || github.sha }}
+          GIT_REF: ${{ github.event.pull_request.head.ref || github.ref }}
         run: bash .github/scripts/lo-ci/publish-build.sh
+
+      # Green build → auto-merge the PR. The artefact at lo-builds/<BUILD_ID>/
+      # was already published above against the PR head SHA. Rebase merge keeps
+      # the head SHA intact so artefacts and dev branch line up exactly.
+      - name: Auto-merge PR (rebase, squashed history not desired)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR_NUMBER" --rebase --auto --delete-branch
