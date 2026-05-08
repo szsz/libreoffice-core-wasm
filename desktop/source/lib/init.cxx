@@ -3130,6 +3130,18 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
         }
 
         SAL_INFO("lok", "lo_documentLoadWithOptions: finished @ " << osl_getGlobalTimer());
+        // TODO(online task #116, Phase 1.5): emit
+        // LOK_CALLBACK_DOCUMENT_READY here via PostUserEvent so the
+        // WASM/Online build can replace its polling-based readiness
+        // detection with an event. The callback registry is per-
+        // document and gets registered by the caller AFTER this
+        // function returns, so a synchronous emit here would race
+        // against the kit's registerCallback. Needs an async
+        // dispatch (Idle / PostUserEvent) plus a way to look up
+        // the registered callback by document handle at fire time.
+        // Tracked separately; this PR only reserves the protocol
+        // number (enum 75) so kit-side wiring can start in
+        // parallel.
         return pDocument;
     }
     catch (const uno::Exception& exception)
