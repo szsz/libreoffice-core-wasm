@@ -1084,7 +1084,34 @@ typedef enum
      * Used by the WASM/Online build to trigger heap-snapshot save from
      * JS without resorting to DOM heuristics.
      */
-    LOK_CALLBACK_FIRST_DOC_PAINTED = 74
+    LOK_CALLBACK_FIRST_DOC_PAINTED = 74,
+
+    /**
+     * The document is fully loaded / reloaded and ready for user input.
+     * Distinct from LOK_CALLBACK_FIRST_DOC_PAINTED: paint-first only
+     * means the canvas had its first frame; ready means LO's load
+     * pipeline (filter chain, view setup, undo/redo init) is settled
+     * and uno commands will be dispatched correctly.
+     *
+     * Payload: empty string (the event's existence IS the signal).
+     *
+     * Emitted at three sites in desktop/source/lib/init.cxx:
+     *   1. lo_documentLoad / lo_documentLoadWithOptions terminal —
+     *      the cold-load path, when a brand-new document finishes
+     *      loading.
+     *   2. wasm_reload_doc_in_place — the hot-switch path, when the
+     *      existing frame swaps to a new doc model.
+     *   3. (TODO follow-up) warm-restore re-attach — the SECOND_INIT
+     *      stage where the snapshot's preserved document becomes
+     *      live again. Needs a way to dispatch into the document's
+     *      callback registry which doesn't have a stable handle at
+     *      that point.
+     *
+     * Used by the WASM/Online build to replace today's polling-
+     * based readiness detection (wasm-loader.js's docPoll loop) with
+     * an event-driven signal — see online repo task #116.
+     */
+    LOK_CALLBACK_DOCUMENT_READY = 75
 }
 LibreOfficeKitCallbackType;
 
@@ -1187,6 +1214,10 @@ static inline const char* lokCallbackTypeToString(int nType)
         return "LOK_CALLBACK_RULER_UPDATE";
     case LOK_CALLBACK_VERTICAL_RULER_UPDATE:
         return "LOK_CALLBACK_VERTICAL_RULER_UPDATE";
+    case LOK_CALLBACK_FIRST_DOC_PAINTED:
+        return "LOK_CALLBACK_FIRST_DOC_PAINTED";
+    case LOK_CALLBACK_DOCUMENT_READY:
+        return "LOK_CALLBACK_DOCUMENT_READY";
     case LOK_CALLBACK_WINDOW:
         return "LOK_CALLBACK_WINDOW";
     case LOK_CALLBACK_VALIDITY_LIST_BUTTON:
