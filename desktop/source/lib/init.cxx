@@ -4849,6 +4849,23 @@ static void doc_registerCallback(LibreOfficeKitDocument* pThis,
         pDocument->mpCallbackFlushHandlers[nView]->setViewId(nView);
         pViewShell->setLibreOfficeKitViewCallback(pDocument->mpCallbackFlushHandlers[nView].get());
 
+        // online task #116 / iter 18: now that the per-view callback
+        // is fully wired (setLibreOfficeKitViewCallback returned), emit
+        // LOK_CALLBACK_DOCUMENT_READY through it. By the time
+        // doc_registerCallback runs, lo_documentLoadWithOptions has
+        // already returned — the document is loaded, the model exists,
+        // and the kit (in szsz/online) is the only thing that calls
+        // registerCallback, so this fires exactly when an Online client
+        // is ready to consume it. Direct synchronous invocation of
+        // pCallback is what every other "fire-on-register" path in this
+        // function already does (see LOK_CALLBACK_FONTS_MISSING below).
+        // Payload is unused on the consumer side — Online's Kit.cpp
+        // turns the callback into a `docready: viewid=N path=lok-
+        // callback` text frame regardless of payload; the JS side is
+        // idempotent so multi-view registration collapses to a single
+        // fireDocReady().
+        pCallback(LOK_CALLBACK_DOCUMENT_READY, "ok", pData);
+
         if (!pDocument->maFontsMissing.empty())
         {
             OStringBuffer sPayload("{ \"fontsmissing\": [ ");
