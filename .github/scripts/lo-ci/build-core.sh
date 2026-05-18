@@ -37,6 +37,21 @@ mkdir -p "$STATE_DIR" "$CORE_BUILD_HOST" "$CCACHE_HOST" "$TARBALLS_HOST"
 # the workspace back to the runner user (UID 1000 = localadmin) on exit.
 trap 'sudo chown -R 1000:1000 "$WORKSPACE" 2>/dev/null || true' EXIT
 
+# ── Sync submodule URLs from .gitmodules into .git/config ──────
+# `actions/checkout@v4` reuses the runner's checkout dir between runs and
+# never wipes `.git/config`. Once a previous run did `git submodule init`
+# with the OLD `.gitmodules` (which had relative URLs like
+# `url = ../translations`, resolving to `szsz/translations` — a repo that
+# doesn't exist), the stale `[submodule "translations"] url = ...szsz/...`
+# entry sits permanently in `.git/config`. The next `git submodule update`
+# uses that cached URL and bypasses whatever `.gitmodules` now says.
+#
+# `git submodule sync --recursive` rewrites the `.git/config` URLs from
+# the current `.gitmodules`, so a `.gitmodules` change in the source tree
+# (e.g. fork-relative → upstream absolute) actually takes effect on
+# subsequent submodule operations. Cheap (no network).
+(cd "$WORKSPACE" && git submodule sync --recursive 2>&1 | tail -3) || true
+
 # ── Restore source-tree mtimes from git history ────────────────
 # actions/checkout writes every file with `now` as the mtime, which makes
 # `make` see all sources as newer than core-build artefacts and rebuild
