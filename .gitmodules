@@ -1,15 +1,15 @@
 [submodule "dictionaries"]
 	path = dictionaries
-	url = ../dictionaries
+	url = https://github.com/LibreOffice/dictionaries
 	branch = .
     shallow = true
 [submodule "helpcontent2"]
 	path = helpcontent2
-	url = ../help
+	url = https://github.com/LibreOffice/help
 	branch = .
     shallow = true
 [submodule "translations"]
 	path = translations
-	url = ../translations
+	url = https://github.com/LibreOffice/translations
 	branch = .
     shallow = true
