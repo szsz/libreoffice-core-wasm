@@ -739,6 +739,12 @@ static bool IsExpanded_Impl(const std::vector<OUString>& rEntries, std::u16strin
     return false;
 }
 
+// Forward declarations — defined later in the file. Needed here because
+// FillTreeBox (below) calls lcl_GetLocalisedStyleName before its definition.
+static OUString lcl_GetStyleFamilyName(SfxStyleFamily nFamily);
+static OUString lcl_GetLocalisedStyleName(SfxObjectShell* pObjShell, SfxStyleFamily eFam,
+                                           const OUString& sInternalName);
+
 static void lcl_Update(weld::TreeView& rTreeView, const weld::TreeIter& rIter,
                        const StyleTree_Impl& rEntry, SfxStyleFamily eFam, SfxViewShell* pViewSh)
 {
@@ -1361,7 +1367,12 @@ void StyleList::UpdateStyles(StyleFlags nFlags)
 
     while (pStyle)
     {
-        aStyles.emplace_back(pStyle->GetName(), pStyle->GetParent(), pStyle->GetSpotlightId());
+        const OUString sInternalName = pStyle->GetName();
+        // task #193: cache localised DisplayName for the flat-list view too.
+        const OUString sDisplayName
+            = lcl_GetLocalisedStyleName(m_pCurObjShell, eFam, sInternalName);
+        aStyles.emplace_back(sInternalName, sDisplayName, pStyle->GetParent(),
+                             pStyle->GetSpotlightId());
         pStyle = m_pStyleSheetPool->Next();
     }
     OUString aUIName = getDefaultStyleName(eFam);
