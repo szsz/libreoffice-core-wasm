@@ -582,6 +582,11 @@ class StyleTree_Impl
 {
 private:
     OUString aName;
+    // task #193: cache the UNO DisplayName at tree-build time so the
+    // sidebar treeview can render the localised label without re-querying
+    // UNO at every set_text. Falls back to aName if the DisplayName lookup
+    // fails (e.g. user-defined style not yet exposed via UNO).
+    OUString aDisplayName;
     OUString aParent;
     sal_Int32 nSpotlightId;
     StyleTreeArr_Impl pChildren;
@@ -589,8 +594,10 @@ private:
 public:
     bool HasParent() const { return !aParent.isEmpty(); }
 
-    StyleTree_Impl(OUString _aName, OUString _aParent, sal_Int32 _nSpotlightId)
+    StyleTree_Impl(OUString _aName, OUString _aDisplayName, OUString _aParent,
+                   sal_Int32 _nSpotlightId)
         : aName(std::move(_aName))
+        , aDisplayName(std::move(_aDisplayName))
         , aParent(std::move(_aParent))
         , nSpotlightId(_nSpotlightId)
         , pChildren(0)
@@ -598,6 +605,10 @@ public:
     }
 
     const OUString& getName() const { return aName; }
+    const OUString& getDisplayName() const
+    {
+        return aDisplayName.isEmpty() ? aName : aDisplayName;
+    }
     const OUString& getParent() const { return aParent; }
     sal_Int32 getSpotlightId() const { return nSpotlightId; }
     StyleTreeArr_Impl& getChildren() { return pChildren; }
@@ -666,6 +677,8 @@ static void InsertSpotlightEntry(weld::TreeView& rTreeView, const weld::TreeIter
                                  SfxViewShell* pViewSh)
 {
     const OUString& rName = rEntry.getName();
+    // task #193: id stays language-invariant, text is localised.
+    const OUString& rDisplayName = rEntry.getDisplayName();
 
     Color aColor = ColorHash(rName);
 
@@ -690,7 +703,7 @@ static void InsertSpotlightEntry(weld::TreeView& rTreeView, const weld::TreeIter
         if (rName == sDefaultCharStyleUIName.value() /*"No Character Style"*/)
         {
             rTreeView.set_id(rIter, rName);
-            rTreeView.set_text(rIter, rName);
+            rTreeView.set_text(rIter, rDisplayName);
             return;
         }
     }
@@ -712,7 +725,7 @@ static void InsertSpotlightEntry(weld::TreeView& rTreeView, const weld::TreeIter
     }
 
     rTreeView.set_id(rIter, rName);
-    rTreeView.set_text(rIter, rName);
+    rTreeView.set_text(rIter, rDisplayName);
     rTreeView.set_image(rIter, *xDevice, 0);
 }
 
@@ -748,6 +761,8 @@ static void FillBox_Impl(weld::TreeView& rBox, StyleTreeArr_Impl& rTreeArray,
          pViewShell](weld::TreeIter& rIter, int i) {
             StyleTree_Impl* pChildEntry = rTreeArray[i].get();
             const OUString& rChildName = pChildEntry->getName();
+            // task #193: id stays language-invariant; text is localised DisplayName.
+            const OUString& rChildText = pChildEntry->getDisplayName();
             const SfxStyleSheetBase* pStyle = pStyleSheetPool->Find(rChildName, eStyleFamily);
             if (bSpotlightFill)
             {
@@ -756,13 +771,13 @@ static void FillBox_Impl(weld::TreeView& rBox, StyleTreeArr_Impl& rTreeArray,
                 else
                 {
                     rBox.set_id(rIter, rChildName);
-                    rBox.set_text(rIter, rChildName);
+                    rBox.set_text(rIter, rChildText);
                 }
             }
             else
             {
                 rBox.set_id(rIter, rChildName);
-                rBox.set_text(rIter, rChildName);
+                rBox.set_text(rIter, rChildText);
             }
             if (pStyle && pStyle->IsHidden())
                 rBox.set_font_color(
@@ -1039,8 +1054,11 @@ void StyleList::FillHierarchicalTreeView(bool bExpandRootParents)
         {
             if (aStyleSheetSet.insert(std::pair(pStyle->GetName(), pStyle->GetParent())).second)
             {
+                const OUString sInternalName = pStyle->GetName();
+                // task #193: localised DisplayName cached for the sidebar treeview.
+                const OUString sDisplayName = lcl_GetLocalisedStyleName(m_pCurObjShell, eFam, sInternalName);
                 std::unique_ptr<StyleTree_Impl> pNew = std::make_unique<StyleTree_Impl>(
-                    pStyle->GetName(), pStyle->GetParent(), pStyle->GetSpotlightId());
+                    sInternalName, sDisplayName, pStyle->GetParent(), pStyle->GetSpotlightId());
                 aArr.push_back(std::move(pNew));
             }
             pStyle = m_pStyleSheetPool->Next();
@@ -1145,6 +1163,50 @@ static OUString lcl_GetStyleFamilyName(SfxStyleFamily nFamily)
     if (nFamily == SfxStyleFamily::Pseudo)
         return u"NumberingStyles"_ustr;
     return OUString();
+}
+
+// task #193: look up the localised DisplayName for a style via UNO.
+// The SfxStyleSheetBase iterator returns the language-invariant internal
+// name (GetName()); the user-visible localised string is exposed only on
+// the UNO XStyle's "DisplayName" property — same pattern the ribbon's
+// StylesPreviewToolBoxControl uses to populate its iconview. Without this,
+// the sidebar treeview ends up always English even when the rest of the
+// UI is localised (Vorlagen-Seitenleiste shows "Heading 1" instead of
+// "Überschrift 1"). Falls back to the internal name on any UNO error so
+// behaviour stays at-least-as-good as before.
+static OUString lcl_GetLocalisedStyleName(SfxObjectShell* pObjShell, SfxStyleFamily eFam,
+                                           const OUString& sInternalName)
+{
+    if (!pObjShell || sInternalName.isEmpty())
+        return sInternalName;
+    const OUString aFamilyName = lcl_GetStyleFamilyName(eFam);
+    if (aFamilyName.isEmpty())
+        return sInternalName;
+    try
+    {
+        uno::Reference<style::XStyleFamiliesSupplier> xModel(pObjShell->GetModel(),
+                                                              uno::UNO_QUERY);
+        if (!xModel.is())
+            return sInternalName;
+        uno::Reference<container::XNameAccess> xFamilies = xModel->getStyleFamilies();
+        if (!xFamilies.is())
+            return sInternalName;
+        uno::Reference<container::XNameAccess> xStyles;
+        xFamilies->getByName(aFamilyName) >>= xStyles;
+        if (!xStyles.is() || !xStyles->hasByName(sInternalName))
+            return sInternalName;
+        uno::Reference<beans::XPropertySet> xInfo;
+        xStyles->getByName(sInternalName) >>= xInfo;
+        if (!xInfo.is())
+            return sInternalName;
+        OUString sDisplay;
+        xInfo->getPropertyValue(u"DisplayName"_ustr) >>= sDisplay;
+        return sDisplay.isEmpty() ? sInternalName : sDisplay;
+    }
+    catch (const uno::Exception&)
+    {
+        return sInternalName;
+    }
 }
 
 OUString StyleList::getDefaultStyleName(const SfxStyleFamily eFam)
