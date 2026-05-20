@@ -1771,7 +1771,19 @@ IMPL_LINK(StyleList, CustomRenderHdl, weld::TreeView::render_args, aPayload, voi
     }
 
     if (!bSuccess)
-        rRenderContext.DrawText(aRect, rId, DrawTextFlags::Left | DrawTextFlags::VCenter);
+    {
+        // task #193: when the preview renderer fails (common in WASM/LOK
+        // because CreateStylePreviewRenderer returns nullptr), the
+        // CustomRenderHdl overrides the row's set_text with canvas-drawn
+        // text — so localising via set_text alone is invisible. Look up
+        // the UNO DisplayName for rId here too. Falls back to rId on any
+        // UNO error so behaviour stays at-least-as-good as before.
+        const SfxStyleFamily eFam = GetFamilyItem() ? GetFamilyItem()->GetFamily()
+                                                    : SfxStyleFamily::Para;
+        const OUString sLocalised = lcl_GetLocalisedStyleName(pShell, eFam, rId);
+        rRenderContext.DrawText(aRect, sLocalised,
+                                DrawTextFlags::Left | DrawTextFlags::VCenter);
+    }
 }
 
 // Selection of a template during the Watercan-Status ?
