@@ -1342,8 +1342,10 @@ void StyleList::UpdateStyles(StyleFlags nFlags)
                     lcl_Update(*m_xFmtLb, rIter, aStyles[nIdx], eFam, pViewShell);
                 else
                 {
+                    // task #193: id stays language-invariant, text uses
+                    // cached localised DisplayName (see lcl_GetLocalisedStyleName).
                     m_xFmtLb->set_id(rIter, rName);
-                    m_xFmtLb->set_text(rIter, rName);
+                    m_xFmtLb->set_text(rIter, aStyles[nIdx].getDisplayName());
                 }
             },
             nullptr, nullptr, /*bGoingToSetText*/ true);
@@ -1353,8 +1355,10 @@ void StyleList::UpdateStyles(StyleFlags nFlags)
         m_xFmtLb->bulk_insert_for_each(nCount,
                                        [this, &aStyles](weld::TreeIter& rIter, int nIdx) {
                                            const OUString& rName = aStyles[nIdx].getName();
+                                           // task #193: id language-invariant, text localised.
                                            m_xFmtLb->set_id(rIter, rName);
-                                           m_xFmtLb->set_text(rIter, rName);
+                                           m_xFmtLb->set_text(rIter,
+                                                              aStyles[nIdx].getDisplayName());
                                        },
                                        nullptr, nullptr, /*bGoingToSetText*/ true);
     }
