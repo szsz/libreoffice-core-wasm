@@ -673,7 +673,18 @@ void SwTextPaintInfo::DrawText_( const OUString &rText, const SwLinePortion &rPo
     bool bCfgIsAutoGrammar = false;
     SvtLinguConfig().GetProperty( UPN_IS_GRAMMAR_AUTO ) >>= bCfgIsAutoGrammar;
     const bool bBullet = OnWin() && GetOpt().IsBlank() && IsNoSymbol();
-    bool bTmpWrong = bWrong && OnWin() && GetOpt().IsOnlineSpell();
+    // task #196: in LOK/WASM tile-rendering mode `OnWin()` is false
+    // (no native window — output goes to tile buffers). The previous
+    // `OnWin() && IsOnlineSpell()` gate suppressed the red squiggle
+    // entirely in LOK regardless of the .uno:SpellOnline option. The
+    // squiggle is rendered into the same tiles the LOK client paints,
+    // so we want it enabled here. Match the established pattern from
+    // viewsh.cxx:213 (`!comphelper::LibreOfficeKit::isActive()`
+    // distinguishes the print-to-printer suppression path from the
+    // LOK tile path).
+    const bool bRenderToVisibleSurface
+        = OnWin() || comphelper::LibreOfficeKit::isActive();
+    bool bTmpWrong = bWrong && bRenderToVisibleSurface && GetOpt().IsOnlineSpell();
     SfxObjectShell* pObjShell = m_pFrame->GetDoc().GetDocShell();
     if (bTmpWrong && pObjShell)
     {
@@ -681,7 +692,8 @@ void SwTextPaintInfo::DrawText_( const OUString &rText, const SwLinePortion &rPo
             bTmpWrong = false;
     }
 
-    const bool bTmpGrammarCheck = bGrammarCheck && OnWin() && bCfgIsAutoGrammar && GetOpt().IsOnlineSpell();
+    const bool bTmpGrammarCheck
+        = bGrammarCheck && bRenderToVisibleSurface && bCfgIsAutoGrammar && GetOpt().IsOnlineSpell();
     const bool bTmpSmart = bSmartTag && OnWin() && !GetOpt().IsPagePreview() && SwSmartTagMgr::Get().IsSmartTagsEnabled();
 
     OSL_ENSURE( GetParaPortion(), "No paragraph!");
