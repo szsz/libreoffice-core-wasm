@@ -707,11 +707,17 @@ void SwTextPaintInfo::DrawText_( const OUString &rText, const SwLinePortion &rPo
     // probe, then the issue is downstream of SetWrong.
     if (comphelper::LibreOfficeKit::isActive())
     {
-        SAL_INFO("sw.core", "lok-spell-paint bWrong=" << (bWrong ? 1 : 0)
-                 << " bRenderToVisibleSurface=" << (bRenderToVisibleSurface ? 1 : 0)
-                 << " IsOnlineSpell=" << (GetOpt().IsOnlineSpell() ? 1 : 0)
-                 << " bTmpWrong=" << (bTmpWrong ? 1 : 0)
-                 << " wrongListPtr=" << (m_pWrongList ? "non-null" : "null"));
+        // Use fprintf for WASM visibility — SAL_INFO/WARN are stripped
+        // from release builds and we need this diagnostic visible in
+        // the browser console.
+        fprintf(stderr,
+                "lok-spell-paint bWrong=%d bRenderToVisibleSurface=%d "
+                "IsOnlineSpell=%d bTmpWrong=%d wrongListPtr=%s\n",
+                bWrong ? 1 : 0,
+                bRenderToVisibleSurface ? 1 : 0,
+                GetOpt().IsOnlineSpell() ? 1 : 0,
+                bTmpWrong ? 1 : 0,
+                m_pWrongList ? "non-null" : "null");
     }
     SfxObjectShell* pObjShell = m_pFrame->GetDoc().GetDocShell();
     if (bTmpWrong && pObjShell)
