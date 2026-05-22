@@ -18,7 +18,9 @@
  */
 
 #include <StylesPreviewToolBoxControl.hxx>
+#include <comphelper/lok.hxx>
 #include <cppuhelper/supportsservice.hxx>
+#include <cstdio>
 #include <vcl/svapp.hxx>
 #include <toolkit/helper/vclunohelper.hxx>
 #include <com/sun/star/uno/Reference.hxx>
@@ -75,6 +77,17 @@ void StylesPreviewToolBoxControl::InitializeStyles(
                     xParaStyles->getByName(rStyle) >>= xStyle;
                     OUString sTranslatedName;
                     xStyle->getPropertyValue(u"DisplayName"_ustr) >>= sTranslatedName;
+                    // task #193 diag — pair with treeview's UNO call to
+                    // see if these two call sites return different
+                    // DisplayName values for the same family/style.
+                    if (comphelper::LibreOfficeKit::isActive())
+                    {
+                        fprintf(stderr,
+                                "lok-193-iconview-uno family=ParagraphStyles "
+                                "key=%s displayName=%s\n",
+                                OUStringToOString(rStyle, RTL_TEXTENCODING_UTF8).getStr(),
+                                OUStringToOString(sTranslatedName, RTL_TEXTENCODING_UTF8).getStr());
+                    }
                     if (!sTranslatedName.isEmpty())
                         m_aDefaultStyles.emplace_back<StylePreviewDescriptor>(
                             { rStyle, sTranslatedName });

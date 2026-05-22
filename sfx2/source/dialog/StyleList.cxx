@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <cstdio>
 #include <memory>
 #include <unordered_map>
 
@@ -1257,10 +1258,25 @@ static OUString lcl_GetLocalisedStyleName(SfxObjectShell* pObjShell, SfxStyleFam
             return sInternalName;
         OUString sDisplay;
         xInfo->getPropertyValue(u"DisplayName"_ustr) >>= sDisplay;
+        // task #193 diag — compare what treeview's UNO call returns
+        // vs iconview's (StylesPreviewToolBoxControl::InitializeStyles).
+        if (comphelper::LibreOfficeKit::isActive())
+        {
+            fprintf(stderr,
+                    "lok-193-treeview-uno family=%s key=%s displayName=%s "
+                    "fallback=%s\n",
+                    OUStringToOString(aFamilyName, RTL_TEXTENCODING_UTF8).getStr(),
+                    OUStringToOString(sInternalName, RTL_TEXTENCODING_UTF8).getStr(),
+                    OUStringToOString(sDisplay, RTL_TEXTENCODING_UTF8).getStr(),
+                    sDisplay.isEmpty() ? "1" : "0");
+        }
         return sDisplay.isEmpty() ? sInternalName : sDisplay;
     }
     catch (const uno::Exception&)
     {
+        if (comphelper::LibreOfficeKit::isActive())
+            fprintf(stderr, "lok-193-treeview-uno key=%s EXCEPTION\n",
+                    OUStringToOString(sInternalName, RTL_TEXTENCODING_UTF8).getStr());
         return sInternalName;
     }
 }
