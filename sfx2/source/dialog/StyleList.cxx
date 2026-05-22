@@ -739,9 +739,11 @@ static bool IsExpanded_Impl(const std::vector<OUString>& rEntries, std::u16strin
     return false;
 }
 
-// Forward declaration — lcl_GetStyleFamilyName is defined later in
-// this file and is still used by getDefaultStyleName.
+// Forward declarations — defined later in the file. Needed here because
+// FillTreeBox (below) calls lcl_GetLocalisedStyleName before its definition.
 static OUString lcl_GetStyleFamilyName(SfxStyleFamily nFamily);
+static OUString lcl_GetLocalisedStyleName(SfxObjectShell* pObjShell, SfxStyleFamily eFam,
+                                           const OUString& sInternalName);
 
 static void lcl_Update(weld::TreeView& rTreeView, const weld::TreeIter& rIter,
                        const StyleTree_Impl& rEntry, SfxStyleFamily eFam, SfxViewShell* pViewSh)
@@ -1126,25 +1128,13 @@ void StyleList::FillTreeBox(SfxStyleFamily eFam)
             ;
         else
         {
-            // task #193 (follow-up): drop the lcl_GetLocalisedStyleName
-            // UNO indirection. pStyle->GetName() already returns the
-            // localised name (SfxResId-translated at pool-init time for
-            // built-in styles like STR_POOLCOLL_NUM_LEVEL1), and the
-            // UNO `DisplayName` property is the language-invariant
-            // English identifier — so calling it actually *overrode*
-            // a good German name with the English internal one. This
-            // matched the symptom in the probe where treeview_NN
-            // entries rendered "Numbering 5" while the iconview
-            // (which uses GetName() directly) rendered "Nummerierung 5".
-            //
-            // Match what StylesPreviewWindow's lcl_AppendParaStyles
-            // does: use GetName() as both the id and the display
-            // string. Selection lookup goes through `get_selected_text()
-            // → pStyleSheetPool->Find(text)`, and Find() matches on
-            // GetName() too — so id/text equality stays consistent
-            // and selection still works.
-            const OUString sName = pStyle->GetName();
-            StyleTree_Impl* pNew = new StyleTree_Impl(sName, sName,
+            const OUString sInternalName = pStyle->GetName();
+            // task #193: capture the localised DisplayName for the sidebar
+            // treeview to render. Cached in StyleTree_Impl so FillBox_Impl
+            // doesn't repeat the UNO lookup on every set_text.
+            const OUString sDisplayName
+                = lcl_GetLocalisedStyleName(m_pCurObjShell, eFam, sInternalName);
+            StyleTree_Impl* pNew = new StyleTree_Impl(sInternalName, sDisplayName,
                                                       pStyle->GetParent(),
                                                       pStyle->GetSpotlightId());
             aArr.emplace_back(pNew);
@@ -1240,13 +1230,40 @@ static OUString lcl_GetStyleFamilyName(SfxStyleFamily nFamily)
 // UI is localised (Vorlagen-Seitenleiste shows "Heading 1" instead of
 // "Überschrift 1"). Falls back to the internal name on any UNO error so
 // behaviour stays at-least-as-good as before.
-// task #193 (follow-up): lcl_GetLocalisedStyleName removed — UNO
-// `DisplayName` is the language-invariant English identifier, not a
-// translation; calling it as if it were a translator overrode good
-// localised names from pStyle->GetName() with English. The
-// StyleList code paths now use GetName() directly (matches
-// StylesPreviewWindow's lcl_AppendParaStyles). The forward
-// declaration above is also removed.
+static OUString lcl_GetLocalisedStyleName(SfxObjectShell* pObjShell, SfxStyleFamily eFam,
+                                           const OUString& sInternalName)
+{
+    if (!pObjShell || sInternalName.isEmpty())
+        return sInternalName;
+    const OUString aFamilyName = lcl_GetStyleFamilyName(eFam);
+    if (aFamilyName.isEmpty())
+        return sInternalName;
+    try
+    {
+        uno::Reference<style::XStyleFamiliesSupplier> xModel(pObjShell->GetModel(),
+                                                              uno::UNO_QUERY);
+        if (!xModel.is())
+            return sInternalName;
+        uno::Reference<container::XNameAccess> xFamilies = xModel->getStyleFamilies();
+        if (!xFamilies.is())
+            return sInternalName;
+        uno::Reference<container::XNameAccess> xStyles;
+        xFamilies->getByName(aFamilyName) >>= xStyles;
+        if (!xStyles.is() || !xStyles->hasByName(sInternalName))
+            return sInternalName;
+        uno::Reference<beans::XPropertySet> xInfo;
+        xStyles->getByName(sInternalName) >>= xInfo;
+        if (!xInfo.is())
+            return sInternalName;
+        OUString sDisplay;
+        xInfo->getPropertyValue(u"DisplayName"_ustr) >>= sDisplay;
+        return sDisplay.isEmpty() ? sInternalName : sDisplay;
+    }
+    catch (const uno::Exception&)
+    {
+        return sInternalName;
+    }
+}
 
 OUString StyleList::getDefaultStyleName(const SfxStyleFamily eFam)
 {
@@ -1350,14 +1367,11 @@ void StyleList::UpdateStyles(StyleFlags nFlags)
 
     while (pStyle)
     {
-        // task #193 (follow-up): same simplification as FillTreeBox —
-        // use pStyle->GetName() directly. It already returns the
-        // localised name for built-in styles via SfxResId, while the
-        // UNO DisplayName property holds the language-invariant
-        // English identifier (which previously overrode the good
-        // German names for treeview_NN entries).
-        const OUString sName = pStyle->GetName();
-        aStyles.emplace_back(sName, sName, pStyle->GetParent(),
+        const OUString sInternalName = pStyle->GetName();
+        // task #193: cache localised DisplayName for the flat-list view too.
+        const OUString sDisplayName
+            = lcl_GetLocalisedStyleName(m_pCurObjShell, eFam, sInternalName);
+        aStyles.emplace_back(sInternalName, sDisplayName, pStyle->GetParent(),
                              pStyle->GetSpotlightId());
         pStyle = m_pStyleSheetPool->Next();
     }
@@ -1904,13 +1918,16 @@ IMPL_LINK(StyleList, CustomRenderHdl, weld::TreeView::render_args, aPayload, voi
 
     if (!bSuccess)
     {
-        // task #193 (follow-up): rId is now the localised name (we set
-        // both id and text from pStyle->GetName() in FillTreeBox /
-        // FillBox above), so just draw rId directly. The previous
-        // UNO indirection here overrode "Nummerierung 5" with
-        // "Numbering 5" since the UNO DisplayName is the language-
-        // invariant English identifier.
-        rRenderContext.DrawText(aRect, rId,
+        // task #193: when the preview renderer fails (common in WASM/LOK
+        // because CreateStylePreviewRenderer returns nullptr), the
+        // CustomRenderHdl overrides the row's set_text with canvas-drawn
+        // text — so localising via set_text alone is invisible. Look up
+        // the UNO DisplayName for rId here too. Falls back to rId on any
+        // UNO error so behaviour stays at-least-as-good as before.
+        const SfxStyleFamily eFam = GetFamilyItem() ? GetFamilyItem()->GetFamily()
+                                                    : SfxStyleFamily::Para;
+        const OUString sLocalised = lcl_GetLocalisedStyleName(pShell, eFam, rId);
+        rRenderContext.DrawText(aRect, sLocalised,
                                 DrawTextFlags::Left | DrawTextFlags::VCenter);
     }
 }
