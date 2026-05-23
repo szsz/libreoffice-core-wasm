@@ -18,6 +18,8 @@
  */
 
 #include <sal/types.h>
+#include <comphelper/lok.hxx>
+#include <cstdio>
 #include <basegfx/matrix/b2dhommatrixtools.hxx>
 #include <basegfx/polygon/WaveLine.hxx>
 #include <tools/helpers.hxx>
@@ -1063,7 +1065,8 @@ void OutputDevice::DrawWaveLine(const Point& rStartPos, const Point& rEndPos, to
             return;
         WavyLineCache& rLineCache = *snLineCache.get();
         Bitmap aWavylinebmp;
-        if ( !rLineCache.find( GetLineColor(), nLineWidth, nWaveHeight, nEndX - nStartX, aWavylinebmp ) )
+        bool bCacheHit = rLineCache.find( GetLineColor(), nLineWidth, nWaveHeight, nEndX - nStartX, aWavylinebmp );
+        if ( !bCacheHit )
         {
             size_t nWordLength = nEndX - nStartX;
             // start with something big to avoid updating it frequently
@@ -1079,7 +1082,21 @@ void OutputDevice::DrawWaveLine(const Point& rStartPos, const Point& rEndPos, to
 
             rLineCache.insert( aBitmap, GetLineColor(), nLineWidth, nWaveHeight, nWordLength, aWavylinebmp );
         }
-        if ( aWavylinebmp.ImplGetSalBitmap() != nullptr )
+        const bool bSalBmpOk = aWavylinebmp.ImplGetSalBitmap() != nullptr;
+        if (comphelper::LibreOfficeKit::isActive())
+        {
+            fprintf(stderr,
+                    "lok-wave-line cacheHit=%d salBmpOk=%d color=0x%06x "
+                    "lineWidth=%ld waveHeight=%ld bmpSizeW=%ld bmpSizeH=%ld "
+                    "spanPx=%ld\n",
+                    bCacheHit ? 1 : 0, bSalBmpOk ? 1 : 0,
+                    static_cast<unsigned>(GetLineColor().GetRGBColor()),
+                    nLineWidth, nWaveHeight,
+                    static_cast<long>(bSalBmpOk ? aWavylinebmp.GetSizePixel().Width() : -1),
+                    static_cast<long>(bSalBmpOk ? aWavylinebmp.GetSizePixel().Height() : -1),
+                    static_cast<long>(nEndX - nStartX));
+        }
+        if ( bSalBmpOk )
         {
             Size _size( nEndX - nStartX, aWavylinebmp.GetSizePixel().Height() );
             DrawBitmap(Point( rStartPos.X(), rStartPos.Y() ), PixelToLogic( _size ), Point(), _size, aWavylinebmp);
