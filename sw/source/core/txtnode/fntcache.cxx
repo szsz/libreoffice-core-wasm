@@ -19,6 +19,8 @@
 
 #include <sal/config.h>
 
+#include <comphelper/lok.hxx>
+#include <cstdio>
 #include <i18nlangtag/mslangid.hxx>
 #include <officecfg/Office/Common.hxx>
 #include <vcl/outdev.hxx>
@@ -630,14 +632,24 @@ static void lcl_DrawLineForWrongListData(
     const CalcLinePosData   &rCalcLinePosData,
     const Size              &rPrtFontSize )
 {
-    if (!pWList) return;
+    if (!pWList) {
+        if (comphelper::LibreOfficeKit::isActive())
+            fprintf(stderr, "lok-draw-wrong-list pWList=null exit\n");
+        return;
+    }
 
     TextFrameIndex nStart = rInf.GetIdx();
     TextFrameIndex nWrLen = rInf.GetLen();
 
     // check if respective data is available in the current text range
-    if (!pWList->Check( nStart, nWrLen ))
+    const bool bCheck = pWList->Check( nStart, nWrLen );
+    if (!bCheck)
     {
+        if (comphelper::LibreOfficeKit::isActive())
+            fprintf(stderr, "lok-draw-wrong-list checkFail "
+                    "startIdx=%d len=%d exit\n",
+                    static_cast<int>(sal_Int32(rInf.GetIdx())),
+                    static_cast<int>(sal_Int32(rInf.GetLen())));
         return;
     }
 
@@ -647,8 +659,19 @@ static void lcl_DrawLineForWrongListData(
     // Lines for smart tags will always be drawn.
     if (pWList != rInf.GetSmartTags() && WRONG_SHOW_MIN >= nHght)
     {
+        if (comphelper::LibreOfficeKit::isActive())
+            fprintf(stderr, "lok-draw-wrong-list fontTooSmall "
+                    "nHght=%ld WRONG_SHOW_MIN=%d exit\n",
+                    nHght, static_cast<int>(WRONG_SHOW_MIN));
         return;
     }
+
+    if (comphelper::LibreOfficeKit::isActive())
+        fprintf(stderr, "lok-draw-wrong-list entering nHght=%ld "
+                "startIdx=%d len=%d\n",
+                nHght,
+                static_cast<int>(sal_Int32(rInf.GetIdx())),
+                static_cast<int>(sal_Int32(rInf.GetLen())));
 
     SwForbidden::iterator pIter = rForbidden.begin();
     if (rInf.GetOut().GetConnectMetaFile())
@@ -1595,6 +1618,21 @@ void SwFntObj::DrawText( SwDrawTextInfo &rInf )
             }
             else if( !m_bSymbol && rInf.GetLen() )
             {
+                // task #196 diag — confirm we reach the wrong-list draw
+                // path from SwFntObj::DrawText (i.e. bDirectPrint==false,
+                // !GreyWave, !m_bSymbol, GetLen>0) and the inner gate.
+                if (comphelper::LibreOfficeKit::isActive())
+                {
+                    fprintf(stderr,
+                            "lok-fnt-wrong-gate getWrong=%d getGrammar=%d "
+                            "getSmart=%d len=%d enter=%d\n",
+                            rInf.GetWrong() ? 1 : 0,
+                            rInf.GetGrammarCheck() ? 1 : 0,
+                            rInf.GetSmartTags() ? 1 : 0,
+                            static_cast<int>(sal_Int32(rInf.GetLen())),
+                            (rInf.GetWrong() || rInf.GetGrammarCheck()
+                              || rInf.GetSmartTags()) ? 1 : 0);
+                }
                 // anything to do?
                 if (rInf.GetWrong() || rInf.GetGrammarCheck() || rInf.GetSmartTags())
                 {
