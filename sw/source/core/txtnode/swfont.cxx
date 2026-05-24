@@ -19,6 +19,8 @@
 
 #include <hintids.hxx>
 
+#include <comphelper/lok.hxx>
+#include <cstdio>
 #include <com/sun/star/i18n/ScriptType.hpp>
 #include <vcl/outdev.hxx>
 #include <editeng/brushitem.hxx>
@@ -1128,6 +1130,21 @@ Size SwSubFont::GetTextSize_( SwDrawTextInfo& rInf )
 
 void SwSubFont::DrawText_( SwDrawTextInfo &rInf, const bool bGrey )
 {
+    // task #196 diag — log SwSubFont::DrawText_ entry to find why
+    // SwFntObj::DrawText (next layer down) never reaches the wrong-list
+    // gate in LOK tile mode despite inftxt.cxx::OnPaint setting m_pWrongList.
+    if (comphelper::LibreOfficeKit::isActive() && rInf.GetpWrongList())
+    {
+        TextFrameIndex const nLnDbg(rInf.GetText().getLength());
+        fprintf(stderr,
+                "lok-subfnt-draw bGrey=%d hasWrong=1 len=%d totalLen=%d "
+                "willReturn=%d capital=%d\n",
+                bGrey ? 1 : 0,
+                static_cast<int>(sal_Int32(rInf.GetLen())),
+                static_cast<int>(sal_Int32(nLnDbg)),
+                (!rInf.GetLen() || !nLnDbg) ? 1 : 0,
+                IsCapital() ? 1 : 0);
+    }
     rInf.SetGreyWave( bGrey );
     TextFrameIndex const nLn(rInf.GetText().getLength());
     if( !rInf.GetLen() || !nLn )
