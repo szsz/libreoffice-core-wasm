@@ -885,6 +885,17 @@ void SwFntObj::DrawText( SwDrawTextInfo &rInf )
 {
     OSL_ENSURE( rInf.GetShell(), "SwFntObj::DrawText without shell" );
 
+    // task #196 diag — unconditional log at function entry so we know
+    // whether SwFntObj::DrawText is reached at all in LOK tile mode.
+    // Earlier diag was inside an else-if branch which never fired.
+    if (comphelper::LibreOfficeKit::isActive() && rInf.GetpWrongList())
+    {
+        fprintf(stderr,
+                "lok-swfntobj-draw entered hasWrong=1 len=%d outDev=%d\n",
+                static_cast<int>(sal_Int32(rInf.GetLen())),
+                static_cast<int>(rInf.GetOut().GetOutDevType()));
+    }
+
     OutputDevice& rRefDev = rInf.GetShell()->GetRefDev();
     vcl::Window* pWin = rInf.GetShell()->GetWin();
 
