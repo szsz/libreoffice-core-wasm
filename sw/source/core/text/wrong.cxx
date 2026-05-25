@@ -775,7 +775,8 @@ bool WrongListIterator::Check(TextFrameIndex & rStart, TextFrameIndex & rLen)
             fprintf(stderr,
                     "lok-wrong-iter branch=merged inStart=%d inLen=%d "
                     "extentCount=%d\n",
-                    static_cast<int>(rStart), static_cast<int>(rLen),
+                    static_cast<int>(sal_Int32(rStart)),
+                    static_cast<int>(sal_Int32(rLen)),
                     static_cast<int>(m_pMergedPara->extents.size()));
         }
         return false;
@@ -811,7 +812,8 @@ bool WrongListIterator::Check(TextFrameIndex & rStart, TextFrameIndex & rLen)
     {
         fprintf(stderr,
                 "lok-wrong-iter branch=neither inStart=%d inLen=%d\n",
-                static_cast<int>(rStart), static_cast<int>(rLen));
+                static_cast<int>(sal_Int32(rStart)),
+                static_cast<int>(sal_Int32(rLen)));
     }
     return false;
 }
