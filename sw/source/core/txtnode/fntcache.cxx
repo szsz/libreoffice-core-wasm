@@ -888,7 +888,7 @@ void SwFntObj::DrawText( SwDrawTextInfo &rInf )
     // task #196 diag — unconditional log at function entry so we know
     // whether SwFntObj::DrawText is reached at all in LOK tile mode.
     // Earlier diag was inside an else-if branch which never fired.
-    if (comphelper::LibreOfficeKit::isActive() && rInf.GetpWrongList())
+    if (comphelper::LibreOfficeKit::isActive() && rInf.GetWrong())
     {
         fprintf(stderr,
                 "lok-swfntobj-draw entered hasWrong=1 len=%d outDev=%d\n",
