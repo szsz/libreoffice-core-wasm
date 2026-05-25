@@ -23,8 +23,10 @@
 #include <ndtxt.hxx>
 #include <txtfrm.hxx>
 #include <utility>
+#include <cstdio>
 
 #include <osl/diagnose.h>
+#include <comphelper/lok.hxx>
 
 SwWrongArea::SwWrongArea( OUString aType, WrongListType listType,
         css::uno::Reference< css::container::XStringKeyMap > const & xPropertyBag,
@@ -768,16 +770,48 @@ bool WrongListIterator::Check(TextFrameIndex & rStart, TextFrameIndex & rLen)
             m_CurrentIndex += TextFrameIndex(rExtent.nEnd - rExtent.nStart);
             ++m_CurrentExtent;
         }
+        if (comphelper::LibreOfficeKit::isActive())
+        {
+            fprintf(stderr,
+                    "lok-wrong-iter branch=merged inStart=%d inLen=%d "
+                    "extentCount=%d\n",
+                    static_cast<int>(rStart), static_cast<int>(rLen),
+                    static_cast<int>(m_pMergedPara->extents.size()));
+        }
         return false;
     }
     else if (m_pWrongList)
     {
+        sal_Int32 const nInStart(rStart);
+        sal_Int32 const nInLen(rLen);
         sal_Int32 nStart(rStart);
         sal_Int32 nLen(rLen);
         bool const bRet(m_pWrongList->Check(nStart, nLen));
+        if (!bRet && comphelper::LibreOfficeKit::isActive())
+        {
+            sal_uInt16 const cnt = m_pWrongList->Count();
+            sal_Int32 const firstPos = cnt > 0 ? m_pWrongList->Pos(0) : -1;
+            sal_Int32 const firstLen = cnt > 0 ? m_pWrongList->Len(0) : -1;
+            sal_Int32 const lastPos  = cnt > 0 ? m_pWrongList->Pos(cnt - 1) : -1;
+            fprintf(stderr,
+                    "lok-wrong-iter branch=single inStart=%d inLen=%d "
+                    "count=%d firstPos=%d firstLen=%d lastPos=%d\n",
+                    static_cast<int>(nInStart),
+                    static_cast<int>(nInLen),
+                    static_cast<int>(cnt),
+                    static_cast<int>(firstPos),
+                    static_cast<int>(firstLen),
+                    static_cast<int>(lastPos));
+        }
         rStart = TextFrameIndex(nStart);
         rLen = TextFrameIndex(nLen);
         return bRet;
+    }
+    else if (comphelper::LibreOfficeKit::isActive())
+    {
+        fprintf(stderr,
+                "lok-wrong-iter branch=neither inStart=%d inLen=%d\n",
+                static_cast<int>(rStart), static_cast<int>(rLen));
     }
     return false;
 }
