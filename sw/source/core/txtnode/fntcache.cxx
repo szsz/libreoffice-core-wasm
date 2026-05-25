@@ -1558,6 +1558,20 @@ void SwFntObj::DrawText( SwDrawTextInfo &rInf )
             sw::Justify::SpaceDistribution(aKernArray, rInf.GetText(), sal_Int32(rInf.GetIdx()),
                     sal_Int32(nCnt), nSpaceAdd, rInf.GetKern(), bNoHalfSpace);
 
+            // task #196 diag — log which branch the LOK path takes when
+            // hasWrong is set. Earlier proven: SwFntObj::DrawText IS
+            // reached with rInf.GetWrong() non-null, but the wrong-list
+            // inner branch (else-if !m_bSymbol && GetLen) never fires.
+            if (comphelper::LibreOfficeKit::isActive() && rInf.GetWrong())
+            {
+                fprintf(stderr,
+                        "lok-fnt-branch greyWave=%d symbol=%d len=%d "
+                        "wrongInnerWouldEnter=%d\n",
+                        rInf.GetGreyWave() ? 1 : 0,
+                        m_bSymbol ? 1 : 0,
+                        static_cast<int>(sal_Int32(rInf.GetLen())),
+                        (!m_bSymbol && rInf.GetLen()) ? 1 : 0);
+            }
             if( rInf.GetGreyWave() )
             {
                 if( rInf.GetLen() )
