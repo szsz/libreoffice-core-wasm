@@ -60,7 +60,7 @@ OString Win_AddLongPathPrefix( const OString &rPathName )
 }
 #endif //defined(_WIN32)
 
-#if defined SYSTEM_DICTS || defined IOS
+#if defined SYSTEM_DICTS || defined IOS || defined EMSCRIPTEN
 // find old style dictionaries in system directories
 static void GetOldStyleDicsInDir(
     OUString const & aSystemDir, OUString const & aFormatName,
@@ -153,7 +153,7 @@ std::vector< SvtLinguConfigDictionaryEntry > GetOldStyleDics( const char *pDicTy
 
     OUString aFormatName;
     OUString aDicExtension;
-#if defined SYSTEM_DICTS || defined IOS
+#if defined SYSTEM_DICTS || defined IOS || defined EMSCRIPTEN
     OUString aSystemDir;
     OUString aSystemPrefix;
     OUString aSystemSuffix;
@@ -169,6 +169,14 @@ std::vector< SvtLinguConfigDictionaryEntry > GetOldStyleDics( const char *pDicTy
         aSystemDir      = "$BRAND_BASE_DIR/share/spell";
         rtl::Bootstrap::expandMacros(aSystemDir);
         aSystemSuffix   = ".dic";
+#elif defined EMSCRIPTEN
+        // WASM: dict-loader.js writes dicts to /instdir/share/dict/.
+        // No prefix; locale-named .dic files (e.g. en_US.dic). The
+        // DICPATH env var (also scanned) lets Online register
+        // additional langs dynamically.
+        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
+        rtl::Bootstrap::expandMacros(aSystemDir);
+        aSystemSuffix   = ".dic";
 #endif
     }
     else if (strcmp( pDicType, "HYPH" ) == 0)
@@ -177,6 +185,11 @@ std::vector< SvtLinguConfigDictionaryEntry > GetOldStyleDics( const char *pDicTy
         aDicExtension   = ".dic";
 #ifdef SYSTEM_DICTS
         aSystemDir      = HYPH_SYSTEM_DIR;
+        aSystemPrefix   = "hyph_";
+        aSystemSuffix   = aDicExtension;
+#elif defined EMSCRIPTEN
+        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
+        rtl::Bootstrap::expandMacros(aSystemDir);
         aSystemPrefix   = "hyph_";
         aSystemSuffix   = aDicExtension;
 #endif
@@ -194,13 +207,18 @@ std::vector< SvtLinguConfigDictionaryEntry > GetOldStyleDics( const char *pDicTy
         rtl::Bootstrap::expandMacros(aSystemDir);
         aSystemPrefix   = "th_";
         aSystemSuffix   = "_v2.dat";
+#elif defined EMSCRIPTEN
+        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
+        rtl::Bootstrap::expandMacros(aSystemDir);
+        aSystemPrefix   = "th_";
+        aSystemSuffix   = "_v2.dat";
 #endif
     }
 
     if (aFormatName.isEmpty() || aDicExtension.isEmpty())
         return aRes;
 
-#if defined SYSTEM_DICTS || defined IOS
+#if defined SYSTEM_DICTS || defined IOS || defined EMSCRIPTEN
     // set of languages to remember the language where it is already
     // decided to make use of the dictionary.
     std::set< OUString > aDicLangInUse;
