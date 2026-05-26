@@ -19,6 +19,8 @@
 
 #include <config_wasm_strip.h>
 
+#include <cstdio>
+#include <comphelper/lok.hxx>
 #include <hintids.hxx>
 #include <utility>
 #include <vcl/svapp.hxx>
@@ -1330,6 +1332,15 @@ SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
     SwRect aRect;
     assert(sw::FrameContainsNode(*this, rNode.GetIndex()));
     SwTextNode *const pNode(&rNode);
+    if (comphelper::LibreOfficeKit::isActive())
+    {
+        const SwWrongList* pPre = pNode->GetWrong();
+        fprintf(stderr,
+                "lok-autospell entry textLen=%d preWrongCount=%d nActPos=%d\n",
+                static_cast<int>(pNode->GetText().getLength()),
+                pPre ? static_cast<int>(pPre->Count()) : -1,
+                static_cast<int>(nActPos));
+    }
     if (!nActPos)
         nActPos = COMPLETE_STRING;
 
