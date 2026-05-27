@@ -38,6 +38,8 @@
 #include <rtl/bootstrap.hxx>
 #include <rtl/ustring.hxx>
 #include <rtl/string.hxx>
+#include <comphelper/lok.hxx>
+#include <cstdio>
 #include <rtl/tencinfo.h>
 #include <linguistic/misc.hxx>
 
@@ -69,10 +71,20 @@ static void GetOldStyleDicsInDir(
     std::vector< SvtLinguConfigDictionaryEntry >& aRes )
 {
     osl::Directory aSystemDicts(aSystemDir);
-    if (aSystemDicts.open() != osl::FileBase::E_None)
+    auto openRet = aSystemDicts.open();
+    if (comphelper::LibreOfficeKit::isActive())
+    {
+        OString sDir(OUStringToOString(aSystemDir, RTL_TEXTENCODING_UTF8));
+        OString sFmt(OUStringToOString(aFormatName, RTL_TEXTENCODING_UTF8));
+        fprintf(stderr,
+                "lok-dicscan dir=\"%s\" fmt=%s openRet=%d\n",
+                sDir.getStr(), sFmt.getStr(), static_cast<int>(openRet));
+    }
+    if (openRet != osl::FileBase::E_None)
         return;
 
     osl::DirectoryItem aItem;
+    int lokFoundCount = 0;
     osl::FileStatus aFileStatus(osl_FileStatus_Mask_FileURL);
     while (aSystemDicts.getNextItem(aItem) == osl::FileBase::E_None)
     {
@@ -119,6 +131,17 @@ static void GetOldStyleDicsInDir(
 
             if (aDicLangInUse.insert(aLocaleName).second)
             {
+                ++lokFoundCount;
+                if (comphelper::LibreOfficeKit::isActive())
+                {
+                    OString sLoc(OUStringToOString(aLocaleName, RTL_TEXTENCODING_UTF8));
+                    OString sLeaf(OUStringToOString(
+                        sPath.copy(sPath.lastIndexOf('/') + 1),
+                        RTL_TEXTENCODING_UTF8));
+                    fprintf(stderr,
+                            "lok-dicscan hit leaf=\"%s\" locale=%s\n",
+                            sLeaf.getStr(), sLoc.getStr());
+                }
                 // add the dictionary to the resulting vector
                 SvtLinguConfigDictionaryEntry aDicEntry;
                 aDicEntry.aLocations = { sPath };
@@ -137,6 +160,10 @@ static void GetOldStyleDicsInDir(
                 aRes.push_back(std::move(aDicEntry));
             }
         }
+    }
+    if (comphelper::LibreOfficeKit::isActive())
+    {
+        fprintf(stderr, "lok-dicscan done found=%d\n", lokFoundCount);
     }
 }
 #endif
