@@ -75,27 +75,19 @@ HTML
     } > "$out"
 }
 
-gen_section "lo-builds/"  "LibreOffice WASM builds"  "$WORK/lo-builds.html"
-gen_section "app-builds/" "Online (cool-wasm) builds" "$WORK/app-builds.html"
+gen_section "lo-builds/" "LibreOffice WASM builds" "$WORK/lo-builds.html"
 
-# ── root index ──────────────────────────────────────────────────
-cat > "$WORK/root.html" <<HTML
-<!doctype html>
-<meta charset="utf-8"><title>cool wasm builds</title>
-<style>body{font:14px system-ui;margin:2rem;max-width:60rem}h1{margin-bottom:.2rem}
-a{color:#0066cc;text-decoration:none}a:hover{text-decoration:underline}
-.box{border:1px solid #ddd;border-radius:6px;padding:1rem;margin:1rem 0}</style>
-<h1>cool wasm — CI build index</h1>
-<p class="muted">Static-website endpoint of the <code>coolwasmfiles</code> Azure storage account.</p>
-<div class="box">
-  <h3><a href="lo-builds/">LibreOffice core builds</a></h3>
-  <p>Outputs of the <code>szsz/libreoffice-core-wasm</code> dev branch CI.</p>
-</div>
-<div class="box">
-  <h3><a href="app-builds/">Online (cool-wasm) builds</a></h3>
-  <p>Outputs of the <code>szsz/online</code> dev branch CI — each links its test report.</p>
-</div>
-HTML
+# Only lo-builds/ is the LO repo's responsibility now.
+#
+# app-builds/, editor-builds/, local-builds/ AND the root index are
+# all owned by szsz/online's regen-indexes.sh, which uses a richer
+# 7-column schema (Branch / Commit / Tests / Editor) and lists every
+# section. Writing them here clobbered Online's nicer version every
+# LO build — the deployed app-builds/index.html stayed frozen on
+# April-29 content because each LO build re-emitted the old
+# 3-column format AND missed any blobs past the az-list default
+# 5000-blob cap (per-test screenshots saturate that long before
+# recent manifest.json entries).
 
 upload() {
     local src="$1" name="$2"
@@ -106,8 +98,6 @@ upload() {
         --overwrite --no-progress >/dev/null
 }
 
-upload "$WORK/lo-builds.html"  "lo-builds/index.html"
-upload "$WORK/app-builds.html" "app-builds/index.html"
-upload "$WORK/root.html"       "index.html"
+upload "$WORK/lo-builds.html" "lo-builds/index.html"
 
-echo "Indexes refreshed: $SITE/"
+echo "Index refreshed: $SITE/lo-builds/"
