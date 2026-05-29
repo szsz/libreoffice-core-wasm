@@ -194,29 +194,69 @@ sal_Bool SAL_CALL
             const css::uno::Sequence< ::css::beans::PropertyValue >& rProperties )
 {
     MutexGuard  aGuard( GetLinguMutex() );
+    const LanguageType nLang = LinguLocaleToLanguage( rLocale );
     // for historical reasons, the word can be only with ASCII apostrophe in the dictionaries,
     // so as a fallback, convert typographical apostrophes to avoid annoying users, if they
     // have old (user) dictionaries only with the obsolete ASCII apostrophe.
     bool bConvert = false;
-    bool bRet = isValid_Impl( rWord, LinguLocaleToLanguage( rLocale ), rProperties, bConvert );
+    bool bRet = isValid_Impl( rWord, nLang, rProperties, bConvert );
     if (!bRet && bConvert)
     {
         // fallback: convert the apostrophes
-        bRet = isValid_Impl( rWord, LinguLocaleToLanguage( rLocale ), rProperties, bConvert );
+        bRet = isValid_Impl( rWord, nLang, rProperties, bConvert );
     }
-    if (!bRet)
+    if (bRet)
+        return true;
+
+    // Accept compounds combined from custom and default dictionary words
+    // separated by a hyphen. The original code was self-recursive: when the
+    // whole word fails, split on the FIRST hyphen, require both halves
+    // (each itself recursively validated) to be valid. The left half has
+    // no hyphens, so its recursive call reduces to a single isValid_Impl;
+    // the right half may still contain more hyphens and recursed again.
+    // For long hyphen-rich tokens (URLs, GUIDs, code-like identifiers)
+    // this recursion previously overflowed the WASM pthread stack (~64 KB)
+    // once LO -51 enabled dict-discovery and AutoSpell actually ran.
+    // Converted to an explicit loop that walks left-to-right: at each step
+    // either accept the remaining suffix as a whole, or peel off one
+    // hyphen-free token (which must itself validate) and continue with
+    // the rest. Semantics preserved exactly: the loop produces the same
+    // accept/reject decision as the original recursion for every input.
+    OUString aSuffix = rWord;
+    while (true)
     {
-        // accept compounds combined from custom and default dictionary words
-        // separated by a hyphen
-        sal_Int32 nHyphenPos = rWord.indexOf("-");
-        if (nHyphenPos > -1)
+        sal_Int32 nHyphenPos = aSuffix.indexOf('-');
+        if (nHyphenPos < 0)
         {
-            return isValid(rWord.copy(0, nHyphenPos), rLocale, rProperties) &&
-                isValid(rWord.copy(nHyphenPos + 1, rWord.getLength() - nHyphenPos - 1),
-                                rLocale, rProperties);
+            // No more hyphens. The suffix as a whole was already tried
+            // (either as the original rWord at the top of this function,
+            // or as a whole-suffix check at the bottom of the previous
+            // iteration), so it must be invalid.
+            return false;
         }
+        // Validate the leading hyphen-free token on its own. This
+        // matches the recursive isValid(left) on the left half, which
+        // contains no hyphen and so falls through to isValid_Impl.
+        OUString aLeft = aSuffix.copy(0, nHyphenPos);
+        bool bLeftConvert = false;
+        bool bLeftOk = isValid_Impl( aLeft, nLang, rProperties, bLeftConvert );
+        if (!bLeftOk && bLeftConvert)
+            bLeftOk = isValid_Impl( aLeft, nLang, rProperties, bLeftConvert );
+        if (!bLeftOk)
+            return false;
+
+        // Advance past the hyphen and check the remaining suffix as a
+        // whole first (mirroring the top-of-function path of the
+        // recursive call on the right half); if that fails, the loop
+        // continues to peel off the next hyphen-free token.
+        aSuffix = aSuffix.copy(nHyphenPos + 1, aSuffix.getLength() - nHyphenPos - 1);
+        bool bSuffixConvert = false;
+        bool bSuffixOk = isValid_Impl( aSuffix, nLang, rProperties, bSuffixConvert );
+        if (!bSuffixOk && bSuffixConvert)
+            bSuffixOk = isValid_Impl( aSuffix, nLang, rProperties, bSuffixConvert );
+        if (bSuffixOk)
+            return true;
     }
-    return bRet;
 }
 
 Reference< XSpellAlternatives > SAL_CALL
