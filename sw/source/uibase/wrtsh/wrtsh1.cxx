@@ -2268,6 +2268,14 @@ void SwWrtShell::SetReadonlyOption(bool bSet)
 void SwWrtShell::ChangeHeaderOrFooter(
     const UIName& rStyleName, bool bHeader, bool bOn, bool bShowWarning)
 {
+    // WASM #header-footer-remove: In LOK mode GetView().GetFrameWeld() returns
+    // null, so DeleteHeader/FooterDialog(null).run() returns RET_CANCEL
+    // synchronously and bExecute flips to false — silently skipping the
+    // removal and leaving the checkbox stuck. Skip the warning dialog in LOK;
+    // the client is responsible for any confirmation UX.
+    if (comphelper::LibreOfficeKit::isActive())
+        bShowWarning = false;
+
     SdrView *const pSdrView = GetDrawView();
     if (pSdrView && pSdrView->IsTextEdit())
     {   // tdf#107474 deleting header may delete active drawing object
