@@ -14,8 +14,31 @@ gb_RUN_CONFIGURE := $(SRCDIR)/solenv/bin/run-configure
 gb_EMSCRIPTEN_CPPFLAGS := -pthread -s USE_PTHREADS=1 -D_LARGEFILE64_SOURCE -D_LARGEFILE_SOURCE -s SUPPORT_LONGJMP=wasm
 gb_EMSCRIPTEN_LDFLAGS := $(gb_EMSCRIPTEN_CPPFLAGS)
 
-# Initial memory size
-gb_EMSCRIPTEN_LDFLAGS += -s TOTAL_MEMORY=1GB
+# Memory sizing.
+#
+# Initial size: 1 GiB. Most documents (sheet, doc, even simple presentations)
+# fit comfortably under 600 MiB so the cold-start commitment stays modest.
+#
+# Hard cap: removed via -sALLOW_MEMORY_GROWTH=1. The previous fixed-cap
+# build aborted with `Aborted(Cannot enlarge memory arrays to size
+# 1236799488 bytes (OOM). Either (1) compile with -sINITIAL_MEMORY=X with
+# X higher than the current value 1073741824, (2) compile with
+# -sALLOW_MEMORY_GROWTH ...)` whenever the user opened the shape Area
+# dialog in Writer / Impress. The Area dialog ctor + tab-page lazy load
+# of XBitmapList / XGradientList / XPatternList preview bitmaps can push
+# allocation past 1 GiB on top of an already-loaded doc (~80 MiB
+# `Pictures/*` preset zip decoded into a stack of ~40 BitmapEx tiles of
+# `m_aIconSize(60, 64)` plus the source GraphicObjects retained by the
+# XBitmapEntry list). Growing on demand lets the dialog open; the
+# initial 1 GiB keeps cold start identical to before for the 95% of
+# sessions that never hit the cap. The remaining cost - every grow
+# rehosts HEAP arrays at the wasm boundary and JS heap views must be
+# refreshed - is paid only by sessions that exceed 1 GiB.
+#
+# User-approved 2026-06-02: prefer ALLOW_MEMORY_GROWTH over
+# TOTAL_MEMORY=2GB to avoid charging tab memory + swap pressure on
+# low-end devices.
+gb_EMSCRIPTEN_LDFLAGS += -s TOTAL_MEMORY=1GB -s ALLOW_MEMORY_GROWTH=1
 
 ifeq ($(ENABLE_EMSCRIPTEN_PROXY_TO_PTHREAD),)
 gb_EMSCRIPTEN_LDFLAGS += -sPTHREAD_POOL_SIZE=6
