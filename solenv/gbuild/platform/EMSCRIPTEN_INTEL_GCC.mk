@@ -21,8 +21,15 @@ ifeq ($(ENABLE_EMSCRIPTEN_PROXY_TO_PTHREAD),)
 gb_EMSCRIPTEN_LDFLAGS += -sPTHREAD_POOL_SIZE=7
 endif
 
-# Double the main thread stack size, but keep the default value for other threads:
-gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=131072 -sDEFAULT_PTHREAD_STACK_SIZE=65536
+# Double the main thread stack size; pthread stacks bumped 64KB → 512KB so
+# spellcheck activation (its UNO checker call chain through hyphenator,
+# dict scan, AutoSpell) doesn't overflow. The 64KB default tripped a
+# wasm stack-cookie abort in build 2026-05-28-51 (kit/ChildSession spell
+# AutoSpell_ → Linguistic API → emscripten_pthread_helper → cookie hit
+# zero, unreachable) — see online ai/questions/answered/
+# lo-build-id-bump-after-shape-fixes.md. 512KB is 8× headroom; if even
+# that's not enough we can move spellcheck to PROXY_TO_PTHREAD.
+gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=131072 -sDEFAULT_PTHREAD_STACK_SIZE=524288
 
 # To keep the link time (and memory) down, prevent all rewriting options from wasm-emscripten-finalize
 # See emscripten.py, finalize_wasm, modify_wasm = True
