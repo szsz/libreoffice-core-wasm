@@ -622,12 +622,17 @@ sal_Bool SAL_CALL SfxFrameLoader_Impl::load( const Sequence< PropertyValue >& rA
 
     SAL_INFO( "sfx.view", "SfxFrameLoader::load" );
 
-#ifdef __EMSCRIPTEN__
     // Hot-switch perf instrumentation. See ChildSession.cpp's switchdocument
-    // path; this is the bulk of lo_documentLoadWithOptions and is currently
-    // ~38 s for a same-type swap. Marks are relative to *this* call's entry,
-    // so add them to LOK_LOAD[+...]'s loadComponentFromURL:start offset to
-    // get an absolute timeline against the kit-side SWITCHDOC marks.
+    // path; this is the bulk of lo_documentLoadWithOptions and used to be
+    // ~38 s for a same-type swap. Was emitted via MAIN_THREAD_ASYNC_EM_ASM
+    // console.log on every cold + warm + hot-switch open, contributing
+    // ~50 lines / ~3 KB of cold-open chatter on new.docx (the
+    // "FRMLOAD[+Nms] ..." prefix). Now compile-gated behind an explicit
+    // FRMLOAD_PERF_TRACE so the instrumentation can be re-enabled for a
+    // perf dive without paying the console-noise cost in release builds.
+    // Re-enable by defining FRMLOAD_PERF_TRACE in a local build (e.g.
+    // `-DFRMLOAD_PERF_TRACE=1` on the gbuild command line).
+#if defined(__EMSCRIPTEN__) && defined(FRMLOAD_PERF_TRACE)
     const auto frmT0 = std::chrono::steady_clock::now();
     auto frmMs = [&frmT0]() {
         return (int)std::chrono::duration_cast<std::chrono::milliseconds>(
