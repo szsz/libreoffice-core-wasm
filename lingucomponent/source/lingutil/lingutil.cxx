@@ -189,22 +189,19 @@ std::vector< SvtLinguConfigDictionaryEntry > GetOldStyleDics( const char *pDicTy
     {
         aFormatName     = "DICT_SPELL";
         aDicExtension   = ".dic";
-        // EMSCRIPTEN first — WASM builds end up with SYSTEM_DICTS set
-        // (no --without-system-dicts in the WASM distro config), so
-        // the EMSCRIPTEN branch must take precedence. Otherwise
-        // DICT_SYSTEM_DIR (=/usr/share/hunspell on Linux) wins and
-        // the WASM VFS scan finds nothing.
-#if defined EMSCRIPTEN
-        // WASM: dict-loader.js writes dicts to /instdir/share/dict/.
-        // No prefix; locale-named .dic files (e.g. en_US.dic).
-        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
-        rtl::Bootstrap::expandMacros(aSystemDir);
-        aSystemSuffix   = ".dic";
-#elif defined SYSTEM_DICTS
+#ifdef SYSTEM_DICTS
         aSystemDir      = DICT_SYSTEM_DIR;
         aSystemSuffix   = aDicExtension;
 #elif defined IOS
         aSystemDir      = "$BRAND_BASE_DIR/share/spell";
+        rtl::Bootstrap::expandMacros(aSystemDir);
+        aSystemSuffix   = ".dic";
+#elif defined EMSCRIPTEN
+        // WASM: dict-loader.js writes dicts to /instdir/share/dict/.
+        // No prefix; locale-named .dic files (e.g. en_US.dic). The
+        // DICPATH env var (also scanned) lets Online register
+        // additional langs dynamically.
+        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
         rtl::Bootstrap::expandMacros(aSystemDir);
         aSystemSuffix   = ".dic";
 #endif
@@ -213,13 +210,13 @@ std::vector< SvtLinguConfigDictionaryEntry > GetOldStyleDics( const char *pDicTy
     {
         aFormatName     = "DICT_HYPH";
         aDicExtension   = ".dic";
-#if defined EMSCRIPTEN
-        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
-        rtl::Bootstrap::expandMacros(aSystemDir);
+#ifdef SYSTEM_DICTS
+        aSystemDir      = HYPH_SYSTEM_DIR;
         aSystemPrefix   = "hyph_";
         aSystemSuffix   = aDicExtension;
-#elif defined SYSTEM_DICTS
-        aSystemDir      = HYPH_SYSTEM_DIR;
+#elif defined EMSCRIPTEN
+        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
+        rtl::Bootstrap::expandMacros(aSystemDir);
         aSystemPrefix   = "hyph_";
         aSystemSuffix   = aDicExtension;
 #endif
@@ -228,17 +225,17 @@ std::vector< SvtLinguConfigDictionaryEntry > GetOldStyleDics( const char *pDicTy
     {
         aFormatName     = "DICT_THES";
         aDicExtension   = ".dat";
-#if defined EMSCRIPTEN
-        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
-        rtl::Bootstrap::expandMacros(aSystemDir);
-        aSystemPrefix   = "th_";
-        aSystemSuffix   = "_v2.dat";
-#elif defined SYSTEM_DICTS
+#ifdef SYSTEM_DICTS
         aSystemDir      = THES_SYSTEM_DIR;
         aSystemPrefix   = "th_";
         aSystemSuffix   = "_v2.dat";
 #elif defined IOS
         aSystemDir      = "$BRAND_BASE_DIR/share/thes";
+        rtl::Bootstrap::expandMacros(aSystemDir);
+        aSystemPrefix   = "th_";
+        aSystemSuffix   = "_v2.dat";
+#elif defined EMSCRIPTEN
+        aSystemDir      = "$BRAND_BASE_DIR/share/dict";
         rtl::Bootstrap::expandMacros(aSystemDir);
         aSystemPrefix   = "th_";
         aSystemSuffix   = "_v2.dat";
