@@ -66,9 +66,29 @@ jobs:
           GIT_REF: ${{ github.event.pull_request.head.ref || github.ref }}
         run: bash .github/scripts/lo-ci/publish-build.sh
 
-      # Green build → auto-merge the PR. The artefact at lo-builds/<BUILD_ID>/
-      # was already published above against the PR head SHA. Rebase merge keeps
-      # the head SHA intact so artefacts and dev branch line up exactly.
+      # Quality gate — static validation of the just-published artefact.
+      # Catches structural/corrupt-build regressions before auto-merge:
+      # tarball downloads + extracts, MANIFEST.json parses, soffice.data
+      # in expected size range, soffice.js has key emscripten exports,
+      # locale data present, overall size within ±25% of the previous
+      # green build. ~3 min on the self-hosted wasm-build runner. The
+      # 10-min timeout is generous.
+      #
+      # Does NOT catch runtime crash classes (e.g. the -51 spellcheck-
+      # stack-overflow). A future runtime gate (build Online + headless
+      # browser smoke) is deferred — the docker container's Poco patch
+      # state caused the first runtime-gate attempt to fail spuriously.
+      # Tracked separately.
+      - name: Quality gate (static artefact validation)
+        timeout-minutes: 10
+        env:
+          BUILD_ID: ${{ steps.ids.outputs.build_id }}
+        run: bash .github/scripts/lo-ci/smoke-test.sh
+
+      # Green build + green smoke → auto-merge the PR. The artefact at
+      # lo-builds/<BUILD_ID>/ was already published above against the PR
+      # head SHA. Rebase merge keeps the head SHA intact so artefacts and
+      # dev branch line up exactly.
       - name: Auto-merge PR (rebase, squashed history not desired)
         if: ${{ github.event_name == 'pull_request' }}
         env:
