@@ -38,7 +38,18 @@ gb_EMSCRIPTEN_LDFLAGS := $(gb_EMSCRIPTEN_CPPFLAGS)
 # User-approved 2026-06-02: prefer ALLOW_MEMORY_GROWTH over
 # TOTAL_MEMORY=2GB to avoid charging tab memory + swap pressure on
 # low-end devices.
-gb_EMSCRIPTEN_LDFLAGS += -s TOTAL_MEMORY=1GB -s ALLOW_MEMORY_GROWTH=1
+#
+# 2026-06-06: ALLOW_MEMORY_GROWTH=1 is a silent no-op under
+# USE_PTHREADS without an explicit MAXIMUM_MEMORY. Emscripten emits
+# the SharedArrayBuffer with maximum=initial, so the heap can't
+# actually grow. Diagnostic confirmed via wasm import-section parse
+# (env.memory{initial=maximum=16384 pages, shared}) and the runtime
+# probe at ai/proposals/proposed/shape-area-unaligned-access-after-
+# growth.md: Module.HEAPU8.byteLength stays at exactly 1 GiB and
+# the Area dialog still trips the WASM bounds check on the next
+# pixel write. Setting MAXIMUM_MEMORY=2GB makes growth actually
+# engage.
+gb_EMSCRIPTEN_LDFLAGS += -s TOTAL_MEMORY=1GB -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=2GB
 
 ifeq ($(ENABLE_EMSCRIPTEN_PROXY_TO_PTHREAD),)
 gb_EMSCRIPTEN_LDFLAGS += -sPTHREAD_POOL_SIZE=6
