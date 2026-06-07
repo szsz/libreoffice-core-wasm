@@ -1339,15 +1339,6 @@ SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
     SwRect aRect;
     assert(sw::FrameContainsNode(*this, rNode.GetIndex()));
     SwTextNode *const pNode(&rNode);
-    if (comphelper::LibreOfficeKit::isActive())
-    {
-        const SwWrongList* pPre = pNode->GetWrong();
-        fprintf(stderr,
-                "lok-autospell entry textLen=%d preWrongCount=%d nActPos=%d\n",
-                static_cast<int>(pNode->GetText().getLength()),
-                pPre ? static_cast<int>(pPre->Count()) : -1,
-                static_cast<int>(nActPos));
-    }
     if (!nActPos)
         nActPos = COMPLETE_STRING;
 
@@ -1416,19 +1407,11 @@ SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
     {
         uno::Reference< XSpellChecker1 > xSpell( ::GetSpellChecker() );
         SwDoc& rDoc = pNode->GetDoc();
-        if (comphelper::LibreOfficeKit::isActive())
-        {
-            fprintf(stderr,
-                    "lok-autospell loop xSpellNonNull=%d nBegin=%d nEnd=%d\n",
-                    xSpell.is() ? 1 : 0,
-                    static_cast<int>(nBegin), static_cast<int>(nEnd));
-        }
 
         SwScanner aScanner( *pNode, pNode->GetText(), nullptr, ModelToViewHelper(),
                             WordType::DICTIONARY_WORD, nBegin, nEnd);
 
         bool bNextWord = aScanner.NextWord();
-        int lokWordLogCount = 0;
         while( bNextWord )
         {
             const OUString& rWord = aScanner.GetWord();
@@ -1442,26 +1425,6 @@ SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
             DetectAndMarkMissingDictionaries( rDoc, xSpell, eActLang );
 
             bool bSpell = xSpell.is() && xSpell->hasLanguage( static_cast<sal_uInt16>(eActLang) );
-            if (comphelper::LibreOfficeKit::isActive()
-                && lokWordLogCount < 12
-                && !rWord.isEmpty())
-            {
-                ++lokWordLogCount;
-                OString sWordU8(OUStringToOString(rWord, RTL_TEXTENCODING_UTF8));
-                bool bIsValid = bSpell ? xSpell->isValid(
-                        rWord, static_cast<sal_uInt16>(eActLang),
-                        Sequence< PropertyValue >()) : true;
-                fprintf(stderr,
-                        "lok-autospell word=\"%s\" lang=%u xSpellOk=%d "
-                        "hasLang=%d bSpell=%d isValid=%d\n",
-                        sWordU8.getStr(),
-                        static_cast<unsigned>(static_cast<sal_uInt16>(eActLang)),
-                        xSpell.is() ? 1 : 0,
-                        (xSpell.is() && xSpell->hasLanguage(
-                            static_cast<sal_uInt16>(eActLang))) ? 1 : 0,
-                        bSpell ? 1 : 0,
-                        bIsValid ? 1 : 0);
-            }
             if( bSpell && !rWord.isEmpty() && !lcl_IsURL(rWord, *pNode, nBegin, nLen) )
             {
                 // check for: bAlter => xHyphWord.is()
