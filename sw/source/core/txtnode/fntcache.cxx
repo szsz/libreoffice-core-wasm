@@ -664,11 +664,8 @@ static void lcl_DrawLineForWrongListData(
     const CalcLinePosData   &rCalcLinePosData,
     const Size              &rPrtFontSize )
 {
-    if (!pWList) {
-        if (comphelper::LibreOfficeKit::isActive())
-            fprintf(stderr, "lok-draw-wrong-list pWList=null exit\n");
+    if (!pWList)
         return;
-    }
 
     TextFrameIndex nStart = rInf.GetIdx();
     TextFrameIndex nWrLen = rInf.GetLen();
@@ -676,34 +673,14 @@ static void lcl_DrawLineForWrongListData(
     // check if respective data is available in the current text range
     const bool bCheck = pWList->Check( nStart, nWrLen );
     if (!bCheck)
-    {
-        if (comphelper::LibreOfficeKit::isActive())
-            fprintf(stderr, "lok-draw-wrong-list checkFail "
-                    "startIdx=%d len=%d exit\n",
-                    static_cast<int>(sal_Int32(rInf.GetIdx())),
-                    static_cast<int>(sal_Int32(rInf.GetLen())));
         return;
-    }
 
     tools::Long nHght = rInf.GetOut().LogicToPixel( rPrtFontSize ).Height();
 
     // Draw wavy lines for spell and grammar errors only if font is large enough.
     // Lines for smart tags will always be drawn.
     if (pWList != rInf.GetSmartTags() && WRONG_SHOW_MIN >= nHght)
-    {
-        if (comphelper::LibreOfficeKit::isActive())
-            fprintf(stderr, "lok-draw-wrong-list fontTooSmall "
-                    "nHght=%ld WRONG_SHOW_MIN=%d exit\n",
-                    nHght, static_cast<int>(WRONG_SHOW_MIN));
         return;
-    }
-
-    if (comphelper::LibreOfficeKit::isActive())
-        fprintf(stderr, "lok-draw-wrong-list entering nHght=%ld "
-                "startIdx=%d len=%d\n",
-                nHght,
-                static_cast<int>(sal_Int32(rInf.GetIdx())),
-                static_cast<int>(sal_Int32(rInf.GetLen())));
 
     SwForbidden::iterator pIter = rForbidden.begin();
     auto popIt = rInf.GetOut().ScopedPush(
@@ -925,17 +902,6 @@ void lcl_SnapToGridEdge(const SwDrawTextInfo& rInf, KernArray* pKernArray, tools
 void SwFntObj::DrawText( SwDrawTextInfo &rInf )
 {
     OSL_ENSURE( rInf.GetShell(), "SwFntObj::DrawText without shell" );
-
-    // task #196 diag — unconditional log at function entry so we know
-    // whether SwFntObj::DrawText is reached at all in LOK tile mode.
-    // Earlier diag was inside an else-if branch which never fired.
-    if (comphelper::LibreOfficeKit::isActive() && rInf.GetWrong())
-    {
-        fprintf(stderr,
-                "lok-swfntobj-draw entered hasWrong=1 len=%d outDev=%d\n",
-                static_cast<int>(sal_Int32(rInf.GetLen())),
-                static_cast<int>(rInf.GetOut().GetOutDevType()));
-    }
 
     OutputDevice& rRefDev = rInf.GetShell()->GetRefDev();
     vcl::Window* pWin = rInf.GetShell()->GetWin();
@@ -1597,20 +1563,6 @@ void SwFntObj::DrawText( SwDrawTextInfo &rInf )
             sw::Justify::SpaceDistribution(aKernArray, rInf.GetText(), sal_Int32(rInf.GetIdx()),
                     sal_Int32(nCnt), nSpaceAdd, rInf.GetKern(), bNoHalfSpace);
 
-            // task #196 diag — log which branch the LOK path takes when
-            // hasWrong is set. Earlier proven: SwFntObj::DrawText IS
-            // reached with rInf.GetWrong() non-null, but the wrong-list
-            // inner branch (else-if !m_bSymbol && GetLen) never fires.
-            if (comphelper::LibreOfficeKit::isActive() && rInf.GetWrong())
-            {
-                fprintf(stderr,
-                        "lok-fnt-branch greyWave=%d symbol=%d len=%d "
-                        "wrongInnerWouldEnter=%d\n",
-                        rInf.GetGreyWave() ? 1 : 0,
-                        m_bSymbol ? 1 : 0,
-                        static_cast<int>(sal_Int32(rInf.GetLen())),
-                        (!m_bSymbol && rInf.GetLen()) ? 1 : 0);
-            }
             if( rInf.GetGreyWave() )
             {
                 if( rInf.GetLen() )
@@ -1682,21 +1634,6 @@ void SwFntObj::DrawText( SwDrawTextInfo &rInf )
             }
             else if( !m_bSymbol && rInf.GetLen() )
             {
-                // task #196 diag — confirm we reach the wrong-list draw
-                // path from SwFntObj::DrawText (i.e. bDirectPrint==false,
-                // !GreyWave, !m_bSymbol, GetLen>0) and the inner gate.
-                if (comphelper::LibreOfficeKit::isActive())
-                {
-                    fprintf(stderr,
-                            "lok-fnt-wrong-gate getWrong=%d getGrammar=%d "
-                            "getSmart=%d len=%d enter=%d\n",
-                            rInf.GetWrong() ? 1 : 0,
-                            rInf.GetGrammarCheck() ? 1 : 0,
-                            rInf.GetSmartTags() ? 1 : 0,
-                            static_cast<int>(sal_Int32(rInf.GetLen())),
-                            (rInf.GetWrong() || rInf.GetGrammarCheck()
-                              || rInf.GetSmartTags()) ? 1 : 0);
-                }
                 // anything to do?
                 if (rInf.GetWrong() || rInf.GetGrammarCheck() || rInf.GetSmartTags())
                 {

@@ -57,16 +57,6 @@ DocumentTimerManager::DocumentTimerManager(SwDoc& i_rSwdoc)
 
 void DocumentTimerManager::StartIdling()
 {
-    if (comphelper::LibreOfficeKit::isActive())
-    {
-        fprintf(stderr,
-                "lok-doctimer StartIdling waitLok=%d block=%u startOnUnblock=%d "
-                "docIdleActive=%d\n",
-                m_bWaitForLokInit ? 1 : 0,
-                static_cast<unsigned>(m_nIdleBlockCount),
-                m_bStartOnUnblock ? 1 : 0,
-                m_aDocIdle.IsActive() ? 1 : 0);
-    }
     if (m_bWaitForLokInit && comphelper::LibreOfficeKit::isActive())
     {
         // Start the idle jobs only after a certain delay.
@@ -176,19 +166,6 @@ IMPL_LINK_NOARG( DocumentTimerManager, DoIdleJobs, Timer*, void )
     StopIdling();
 
     IdleJob eJob = GetNextIdleJob();
-    if (comphelper::LibreOfficeKit::isActive())
-    {
-        const char* jobName = "?";
-        switch (eJob) {
-            case IdleJob::None:    jobName = "None"; break;
-            case IdleJob::Busy:    jobName = "Busy"; break;
-            case IdleJob::Layout:  jobName = "Layout"; break;
-            case IdleJob::Fields:  jobName = "Fields"; break;
-            case IdleJob::Grammar: jobName = "Grammar"; break;
-            default:               jobName = "Other"; break;
-        }
-        fprintf(stderr, "lok-doctimer DoIdleJobs eJob=%s\n", jobName);
-    }
 
     switch ( eJob )
     {
