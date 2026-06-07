@@ -697,28 +697,6 @@ void SwTextPaintInfo::DrawText_( const OUString &rText, const SwLinePortion &rPo
     const bool bRenderToVisibleSurface
         = OnWin() || comphelper::LibreOfficeKit::isActive();
     bool bTmpWrong = bWrong && bRenderToVisibleSurface && GetOpt().IsOnlineSpell();
-    // task #196 diagnostic — confirm whether the spell daemon has
-    // actually populated a wrong-list for this text frame in LOK
-    // mode. If we see `lok-spell-paint bWrong=0` consistently then
-    // the daemon never ran and our previous OnWin paint-gate widen
-    // was necessary but not sufficient; the next fix needs to ensure
-    // SwLayIdle::ONLINE_SPELLING actually fires in LOK. If we see
-    // `bWrong=1 wrongCount=N` but still 0 red pixels on the canvas
-    // probe, then the issue is downstream of SetWrong.
-    if (comphelper::LibreOfficeKit::isActive())
-    {
-        // Use fprintf for WASM visibility — SAL_INFO/WARN are stripped
-        // from release builds and we need this diagnostic visible in
-        // the browser console.
-        fprintf(stderr,
-                "lok-spell-paint bWrong=%d bRenderToVisibleSurface=%d "
-                "IsOnlineSpell=%d bTmpWrong=%d wrongListPtr=%s\n",
-                bWrong ? 1 : 0,
-                bRenderToVisibleSurface ? 1 : 0,
-                GetOpt().IsOnlineSpell() ? 1 : 0,
-                bTmpWrong ? 1 : 0,
-                m_pWrongList ? "non-null" : "null");
-    }
     SfxObjectShell* pObjShell = m_pFrame->GetDoc().GetDocShell();
     if (bTmpWrong && pObjShell)
     {

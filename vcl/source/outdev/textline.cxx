@@ -1083,21 +1083,6 @@ void OutputDevice::DrawWaveLine(const Point& rStartPos, const Point& rEndPos, to
             rLineCache.insert( aBitmap, GetLineColor(), nLineWidth, nWaveHeight, nWordLength, aWavylinebmp );
         }
         const bool bSalBmpOk = aWavylinebmp.ImplGetSalBitmap() != nullptr;
-        if (comphelper::LibreOfficeKit::isActive())
-        {
-            const Color aLineColor = GetLineColor();
-            fprintf(stderr,
-                    "lok-wave-line cacheHit=%d salBmpOk=%d "
-                    "r=%d g=%d b=%d "
-                    "lineWidth=%ld waveHeight=%ld bmpSizeW=%ld bmpSizeH=%ld "
-                    "spanPx=%ld\n",
-                    bCacheHit ? 1 : 0, bSalBmpOk ? 1 : 0,
-                    aLineColor.GetRed(), aLineColor.GetGreen(), aLineColor.GetBlue(),
-                    nLineWidth, nWaveHeight,
-                    static_cast<long>(bSalBmpOk ? aWavylinebmp.GetSizePixel().Width() : -1),
-                    static_cast<long>(bSalBmpOk ? aWavylinebmp.GetSizePixel().Height() : -1),
-                    static_cast<long>(nEndX - nStartX));
-        }
         if ( bSalBmpOk )
         {
             Size _size( nEndX - nStartX, aWavylinebmp.GetSizePixel().Height() );
