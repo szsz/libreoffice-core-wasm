@@ -23,6 +23,13 @@
 #include <mutex>
 #include <condition_variable>
 
+// SECOND_INIT race trace (diagnostic, defined in sal/osl/all/racetrace.cxx).
+// No-op on non-Emscripten builds. Marking the timer-callback dispatch
+// captures the TimerManager thread's tid across the SECOND_INIT boundary
+// — candidate #1 of the late-join OOB race is this thread touching the
+// reset SvpSalYieldMutex waiter state.
+extern "C" void wasm_race_mark(unsigned site);
+
 using namespace salhelper;
 
 class salhelper::TimerManager final : public osl::Thread
@@ -386,6 +393,7 @@ void TimerManager::checkForTimeout()
 
     aLock.unlock();
 
+    wasm_race_mark(30); // timer-callback dispatch (TimerManager thread tid)
     pTimer->onShot();
 
     // restart timer if specified

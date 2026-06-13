@@ -431,8 +431,11 @@ void SvpSalYieldMutex::wasmWarmRestoreReset()
 }
 
 #include <emscripten.h>
+// SECOND_INIT race trace (diagnostic, defined in sal/osl/all/racetrace.cxx).
+extern "C" void wasm_race_mark(unsigned site);
 extern "C" EMSCRIPTEN_KEEPALIVE void wasm_warm_restore_yield_mutex_reset()
 {
+    wasm_race_mark(11); // yield-mutex reset (main thread, once per warm restore)
     if (auto* p = SvpSalInstance::s_pDefaultInstance)
     {
         if (auto* m = dynamic_cast<SvpSalYieldMutex*>(p->GetYieldMutex()))
@@ -443,6 +446,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_warm_restore_yield_mutex_reset()
         // and SvpSalYieldMutex::doRelease takes the wrong branch.
         p->updateMainThread();
     }
+    wasm_race_mark(12); // yield-mutex reset complete
 }
 #endif
 

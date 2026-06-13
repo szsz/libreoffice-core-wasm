@@ -93,6 +93,7 @@ $(eval $(call gb_Library_add_exception_objects,sal,\
 	sal/osl/all/loadmodulerelative \
 	sal/osl/all/log  \
 	sal/osl/all/mutexshared \
+	sal/osl/all/racetrace \
 	sal/osl/all/signalshared  \
 	sal/osl/all/threadshared \
 	sal/osl/all/utility \
