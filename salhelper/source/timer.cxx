@@ -24,11 +24,18 @@
 #include <condition_variable>
 
 // SECOND_INIT race trace (diagnostic, defined in sal/osl/all/racetrace.cxx).
-// No-op on non-Emscripten builds. Marking the timer-callback dispatch
-// captures the TimerManager thread's tid across the SECOND_INIT boundary
-// — candidate #1 of the late-join OOB race is this thread touching the
-// reset SvpSalYieldMutex waiter state.
+// Marking the timer-callback dispatch captures the TimerManager thread's
+// tid across the SECOND_INIT boundary — candidate #1 of the late-join OOB
+// race is this thread touching the reset SvpSalYieldMutex waiter state.
+// ONLY reference the symbol in the Emscripten build: the native _for_build
+// salhelper is a shared lib (.so) and wasm_race_mark (in libsal) is not in
+// sal.map, so a native link to it fails with "undefined reference". The
+// wasm build links sal statically into online.wasm, where it resolves.
+#ifdef __EMSCRIPTEN__
 extern "C" void wasm_race_mark(unsigned site);
+#else
+#define wasm_race_mark(x) ((void)0)
+#endif
 
 using namespace salhelper;
 
