@@ -3743,8 +3743,14 @@ static int lo_joinThreads(LibreOfficeKit* /* pThis */)
     return joinThreads(JoinThreads::ALL);
 }
 
+// SECOND_INIT race trace (diagnostic, defined in sal/osl/all/racetrace.cxx;
+// no-op on non-Emscripten). Visible to the later SECOND_INIT / dict-reinit
+// call sites below too.
+extern "C" void wasm_race_mark(unsigned site);
+
 static void lo_startThreads(LibreOfficeKit* /* pThis */)
 {
+    wasm_race_mark(22); // salhelper::Timer::startThread (fresh timer thread)
     salhelper::Timer::startThread();
 
     auto ucpWebdav = xContext->getServiceManager()->createInstanceWithContext(
@@ -8274,7 +8280,10 @@ static int lo_initialize(LibreOfficeKit* pThis, const char* pAppPath, const char
         }
     }
     else if (bPreInited)
+    {
         eStage = SECOND_INIT;
+        wasm_race_mark(20); // SECOND_INIT stage entered (main thread)
+    }
     else
         eStage = FULL_INIT;
 
@@ -8393,6 +8402,7 @@ static int lo_initialize(LibreOfficeKit* pThis, const char* pAppPath, const char
             uno::Reference<css::util::XPathSettings> xPathSettings = util::thePathSettings::get(xContext);
             uno::Reference<lang::XInitialization> xReInitSettings(xPathSettings, uno::UNO_QUERY_THROW);
             xReInitSettings->initialize({});
+            wasm_race_mark(21); // before reInitDictionaryList (candidate #2)
             reInitDictionaryList();
         }
     }
