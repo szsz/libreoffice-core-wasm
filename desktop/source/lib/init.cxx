@@ -3762,10 +3762,16 @@ static int lo_joinThreads(LibreOfficeKit* /* pThis */)
     return joinThreads(JoinThreads::ALL);
 }
 
-// SECOND_INIT race trace (diagnostic, defined in sal/osl/all/racetrace.cxx;
-// no-op on non-Emscripten). Visible to the later SECOND_INIT / dict-reinit
-// call sites below too.
+// SECOND_INIT race trace (diagnostic, defined in sal/osl/all/racetrace.cxx).
+// Only reference the symbol in the Emscripten build (native _for_build
+// shared libs can't resolve it — it's not exported from libsal.so via
+// sal.map; the wasm build links sal statically). No-op macro on native.
+// Visible to the later SECOND_INIT / dict-reinit call sites below too.
+#ifdef __EMSCRIPTEN__
 extern "C" void wasm_race_mark(unsigned site);
+#else
+#define wasm_race_mark(x) ((void)0)
+#endif
 
 static void lo_startThreads(LibreOfficeKit* /* pThis */)
 {
