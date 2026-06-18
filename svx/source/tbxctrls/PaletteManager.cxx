@@ -430,7 +430,9 @@ OUString PaletteManager::GetPaletteName()
     // a stale/out-of-range mnCurrentPalette can't read past aNames and return
     // a garbage OUString (the crash: rtl_uString_acquire → memory access out
     // of bounds when opening the Area dialog's Color tab in the WASM build).
-    if (mnCurrentPalette < 0 || o3tl::make_unsigned(mnCurrentPalette) >= aNames.size())
+    // mnCurrentPalette is sal_uInt16 (unsigned) so it can't be negative;
+    // just guard the upper bound against the live aNames size.
+    if (mnCurrentPalette >= aNames.size())
         return aNames.empty() ? OUString() : aNames.front();
     return aNames[mnCurrentPalette];
 }
