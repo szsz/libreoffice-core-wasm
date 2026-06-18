@@ -275,6 +275,25 @@ gb_emscripten_fs_image_files := \
     $(INSTROOT)/$(LIBO_SHARE_FOLDER)/filter/oox-drawingml-adj-names \
     $(INSTROOT)/$(LIBO_SHARE_FOLDER)/filter/oox-drawingml-cs-presets \
     $(INSTROOT)/$(LIBO_SHARE_FOLDER)/filter/vml-shape-types \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/arrowhd.soe \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/chart-palettes.soc \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/classic.sog \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/compatibility.soc \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/freecolour-hlc.soc \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/hatching.soh \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/html.soc \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/libreoffice.soc \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/material.soc \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/modern.sog \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/standard.sob \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/standard.soc \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/standard.sod \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/standard.soe \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/standard.sog \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/standard.soh \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/standard.sop \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/styles.sod \
+    $(INSTROOT)/$(LIBO_SHARE_FOLDER)/palette/tonal.soc \
 
 ifneq ($(ENABLE_WASM_STRIP_WRITER),TRUE)
 gb_emscripten_fs_image_files += \
