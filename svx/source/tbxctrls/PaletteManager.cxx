@@ -279,6 +279,14 @@ std::vector<OUString> PaletteManager::GetPaletteList()
 
 void PaletteManager::SetPalette(sal_Int32 nPos, bool bPosOnly)
 {
+    // Guard against an out-of-range palette index. The caller passes the
+    // palette listbox's active position, which can fall outside the live
+    // palette list when the available palettes differ from a saved/default
+    // selection (notably the WASM build, where the color palettes aren't all
+    // loaded). Without this clamp the bad index faults later in
+    // GetPaletteName()'s unchecked aNames[mnCurrentPalette] access.
+    if (nPos < 0 || nPos >= mnNumOfPalettes)
+        nPos = 0;
     mnCurrentPalette = nPos;
     if (bPosOnly)
         return;
@@ -325,6 +333,14 @@ OUString PaletteManager::GetPaletteName()
                 mpColorList = pItem->GetColorList();
         }
     }
+    // Defensive bounds check: mnNumOfPalettes (used to clamp in SetPalette)
+    // is cached at construction, but GetPaletteList() is rebuilt live here,
+    // so the two can diverge if the palette set changed. Guard the index so
+    // a stale/out-of-range mnCurrentPalette can't read past aNames and return
+    // a garbage OUString (the crash: rtl_uString_acquire → memory access out
+    // of bounds when opening the Area dialog's Color tab in the WASM build).
+    if (mnCurrentPalette < 0 || o3tl::make_unsigned(mnCurrentPalette) >= aNames.size())
+        return aNames.empty() ? OUString() : aNames.front();
     return aNames[mnCurrentPalette];
 }
 
