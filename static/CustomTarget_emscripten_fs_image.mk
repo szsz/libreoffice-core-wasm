@@ -1526,8 +1526,19 @@ $(call gb_CustomTarget_get_target,static/emscripten_fs_image): \
 $(emscripten_fs_image_WORKDIR)/soffice.data $(emscripten_fs_image_WORKDIR)/soffice.data.js : $(emscripten_fs_image_WORKDIR)/soffice.data.js.metadata
 
 .PRECIOUS: $(emscripten_fs_image_WORKDIR)/soffice.data.js.link
-$(emscripten_fs_image_WORKDIR)/soffice.data.js.link: $(emscripten_fs_image_WORKDIR)/soffice.data.js
-	$(call gb_Helper_copy_if_different_and_touch,$^,$@)
+# Depend on soffice.data.js.metadata as well, not just soffice.data.js. The
+# grouped target "soffice.data soffice.data.js : ...js.metadata" above has an
+# empty recipe, so on an incremental build a regenerated soffice.data.js can
+# keep a stale mtime and this copy fails to refire — leaving the link (the
+# file actually --pre-js'd into online.js) out of sync with the freshly
+# generated soffice.data.js/.metadata. That ships a loader whose FS_createPath
+# tree lacks newly-added directories (e.g. share/palette) while the metadata
+# lists files in them, so FS_createDataFile faults with ENOENT (errno 44) on
+# the first such file and the whole FS image never finishes mounting. The
+# .metadata target has a real recipe and a reliably-fresh mtime, so listing it
+# here forces the copy whenever the package is regenerated.
+$(emscripten_fs_image_WORKDIR)/soffice.data.js.link: $(emscripten_fs_image_WORKDIR)/soffice.data.js $(emscripten_fs_image_WORKDIR)/soffice.data.js.metadata
+	$(call gb_Helper_copy_if_different_and_touch,$(emscripten_fs_image_WORKDIR)/soffice.data.js,$@)
 
 .PHONY: $(emscripten_fs_image_WORKDIR)/soffice.data.concat_lists
 $(emscripten_fs_image_WORKDIR)/soffice.data.concat_lists: $(gb_emscripten_fs_image_filelists) $(gb_emscripten_fs_image_autoinstall)
