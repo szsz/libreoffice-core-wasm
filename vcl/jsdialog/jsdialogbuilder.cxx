@@ -1042,7 +1042,8 @@ bool JSDialog::runAsync(std::shared_ptr<weld::DialogController> const& rxOwner,
     // the idle fires, so the 2nd-doc dialog never opens. Flushing here
     // delivers the open during runAsync, before any close can clear it.
     emscripten_console_warn("JSDLGTRACE runAsync(owner) flush FullUpdate");
-    flush();
+    if (m_pSender)
+        m_pSender->flush();
 #endif
     return ret;
 }
@@ -1054,7 +1055,8 @@ bool JSDialog::runAsync(std::shared_ptr<Dialog> const& rxSelf,
     sendFullUpdate();
 #ifdef __EMSCRIPTEN__
     emscripten_console_warn("JSDLGTRACE runAsync(self) flush FullUpdate");
-    flush();
+    if (m_pSender)
+        m_pSender->flush();
 #endif
     return ret;
 }
