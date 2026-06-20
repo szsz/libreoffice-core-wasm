@@ -11,6 +11,9 @@
 #include <LibreOfficeKit/LibreOfficeKitEnums.h>
 #include <tools/json_writer.hxx>
 #include <vcl/dockwin.hxx>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/console.h>
+#endif
 
 JSDialogNotifyIdle::JSDialogNotifyIdle(VclPtr<vcl::Window> aNotifierWindow,
                                        VclPtr<vcl::Window> aContentWindow,
@@ -255,6 +258,16 @@ void JSDialogNotifyIdle::Invoke()
         if (m_sTypeOfJSON == "formulabar" && eType != jsdialog::MessageType::Action)
             continue;
 
+#ifdef __EMSCRIPTEN__
+        // TEMP DIAGNOSTIC (doc-switch dialog bug 2026-06-20): trace which
+        // message types flush per jsontype, to see whether the Area dialog's
+        // FullUpdate (open) is ever generated on the 2nd doc.
+        {
+            OString sT = "JSDLGTRACE send jsontype=" + m_sTypeOfJSON
+                + " msgType=" + OString::number(static_cast<int>(eType));
+            emscripten_console_warn(sT.getStr());
+        }
+#endif
         switch (eType)
         {
             case jsdialog::MessageType::FullUpdate:

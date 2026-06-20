@@ -9,6 +9,9 @@
 
 #include <jsdialog/jsdialogbuilder.hxx>
 #include <sal/log.hxx>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/console.h>
+#endif
 #include <iconview.hxx>
 #include <vcl/menu.hxx>
 #include <vcl/svapp.hxx>
@@ -314,6 +317,22 @@ JSInstanceBuilder::JSInstanceBuilder(weld::Widget* pParent, vcl::Window* pVclPar
         default:
             assert(false);
     };
+
+    // TEMP DIAGNOSTIC (doc-switch dialog bug 2026-06-20): log every builder
+    // construction so we can see, on doc A vs the 2nd doc after switchdocument,
+    // which .ui file is built and as what jsontype + window id. Uses
+    // emscripten_console_* so it surfaces to the browser console (kit
+    // fprintf(stderr) does not).
+#ifdef __EMSCRIPTEN__
+    {
+        OString sTrace = "JSDLGTRACE ctor uiFile="
+            + OUStringToOString(rUIFile, RTL_TEXTENCODING_UTF8)
+            + " type=" + OString::number(static_cast<int>(eBuilderType))
+            + " jsontype=" + OUStringToOString(m_sTypeOfJSON, RTL_TEXTENCODING_UTF8)
+            + " windowId=" + OString::number(static_cast<sal_Int64>(m_nWindowId));
+        emscripten_console_warn(sTrace.getStr());
+    }
+#endif
 }
 
 std::unique_ptr<JSInstanceBuilder> JSInstanceBuilder::CreateDialogBuilder(weld::Widget* pParent,
