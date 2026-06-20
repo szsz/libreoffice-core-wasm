@@ -38,6 +38,9 @@
 #include <accel.hxx>
 #include <brdwin.hxx>
 #include <salinst.hxx>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/console.h>
+#endif
 
 #include <rtl/bootstrap.hxx>
 #include <rtl/strbuf.hxx>
@@ -889,6 +892,9 @@ bool Dialog::ImplStartExecute(bool async)
 
     if (IsInExecute() || mpDialogImpl->maEndCtx.isSet())
     {
+#ifdef __EMSCRIPTEN__
+        emscripten_console_warn("DLGSTART fail: IsInExecute/maEndCtx already set");
+#endif
 #ifdef DBG_UTIL
         SAL_WARN( "vcl", "Dialog::StartExecuteModal() is called in Dialog::StartExecuteModal(): "
                     << ImplGetDialogText(this) );
@@ -901,6 +907,12 @@ bool Dialog::ImplStartExecute(bool async)
     const bool bKitActive = comphelper::LibreOfficeKit::isActive();
 
     const bool bModal = GetType() != WindowType::MODELESSDIALOG;
+#ifdef __EMSCRIPTEN__
+    emscripten_console_warn(OString("DLGSTART enter bKitActive="
+        + OString::number(int(bKitActive)) + " bModal=" + OString::number(int(bModal))
+        + " hasNotifier=" + OString::number(int(GetLOKNotifier()!=nullptr))
+        + " cancelMode=" + OString::number(int(Application::GetDialogCancelMode()))).getStr());
+#endif
 
     if (bModal)
     {
@@ -923,6 +935,9 @@ bool Dialog::ImplStartExecute(bool async)
                 // Never crash in release builds (assume "cancel"), but allow
                 // to see the not yet async / not properly set up dialogs in
                 // debug builds.
+#ifdef __EMSCRIPTEN__
+                emscripten_console_warn("DLGSTART fail: InstallLOKNotifierHdl returned null (SfxViewShell::Current()==null)");
+#endif
                 assert(!"A dialog without a notifier: make me async / properly set up");
                 return false;
             }
@@ -961,6 +976,9 @@ bool Dialog::ImplStartExecute(bool async)
                           << "\" cancelled in silent mode\n";
             }
 
+#ifdef __EMSCRIPTEN__
+            emscripten_console_warn("DLGSTART fail: DialogCancelMode::Silent");
+#endif
             SAL_INFO(
                 "vcl",
                 "Dialog \"" << ImplGetDialogText(this)
@@ -968,6 +986,9 @@ bool Dialog::ImplStartExecute(bool async)
             return false;
 
         case DialogCancelMode::LOKSilent:
+#ifdef __EMSCRIPTEN__
+            emscripten_console_warn("DLGSTART fail: DialogCancelMode::LOKSilent");
+#endif
             return false;
 
         default: // default cannot happen
@@ -992,6 +1013,9 @@ bool Dialog::ImplStartExecute(bool async)
         }
 #endif
 
+#ifdef __EMSCRIPTEN__
+        emscripten_console_warn("DLGSTART success: dialog started, gates passed");
+#endif
         // link all dialogs which are being executed
         pSVData->mpWinData->mpExecuteDialogs.push_back(this);
 

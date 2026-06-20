@@ -33,6 +33,9 @@
 #include <sfx2/viewsh.hxx>
 #include <workwin.hxx>
 #include <comphelper/lok.hxx>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/console.h>
+#endif
 
 using namespace ::com::sun::star::uno;
 
@@ -227,7 +230,12 @@ void SfxDialogController::Close()
 
 IMPL_STATIC_LINK_NOARG(SfxDialogController, InstallLOKNotifierHdl, void*, vcl::ILibreOfficeKitNotifier*)
 {
-    return SfxViewShell::Current();
+    SfxViewShell* pCur = SfxViewShell::Current();
+#ifdef __EMSCRIPTEN__
+    emscripten_console_warn(OString("DLGNOTIF InstallLOKNotifierHdl SfxViewShell::Current()="
+        + OString::number(reinterpret_cast<sal_IntPtr>(pCur))).getStr());
+#endif
+    return pCur;
 }
 
 SfxSingleTabDialogController::SfxSingleTabDialogController(weld::Widget *pParent, const SfxItemSet* pSet,
