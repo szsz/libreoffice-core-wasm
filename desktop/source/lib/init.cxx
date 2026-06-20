@@ -3282,6 +3282,26 @@ int wasm_reload_doc_in_place(LibreOfficeKitDocument* pThisDoc, const char* pURL)
             try { xPrev->dispose(); }
             catch (const css::lang::DisposedException&) {} // already gone
         }
+
+        // Make the new document's view the current one. Disposing the old
+        // component above unset the current SfxViewFrame
+        // (SfxViewFrame::SetViewFrame(nullptr) in its close path), and the new
+        // frame from loadComponentFromURL(_self) is not auto-activated in the
+        // headless LOK in-place reload. As a result SfxViewShell::Current()
+        // returns null, so any modal dialog opened afterwards on the 2nd
+        // document (e.g. .uno:FormatArea) cannot install its LOK notifier in
+        // Dialog::ImplStartExecute (SfxDialogController::InstallLOKNotifierHdl
+        // returns SfxViewShell::Current()), so StartExecuteAsync fails, the
+        // dialog is torn down immediately and never opens for the user.
+        // Activating the new view restores SfxViewShell::Current().
+        if (SfxObjectShell* pObjSh = SfxObjectShell::GetShellFromComponent(xNew))
+        {
+            if (SfxViewFrame* pVF = SfxViewFrame::GetFirst(pObjSh))
+            {
+                if (SfxViewShell* pVSh = pVF->GetViewShell())
+                    SfxLokHelper::setView(SfxLokHelper::getView(*pVSh));
+            }
+        }
         return 0;
     }
     catch (const uno::Exception&)
