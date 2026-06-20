@@ -263,7 +263,8 @@ void JSDialogNotifyIdle::Invoke()
         // message types flush per jsontype, to see whether the Area dialog's
         // FullUpdate (open) is ever generated on the 2nd doc.
         {
-            OString sT = "JSDLGTRACE send jsontype=" + m_sTypeOfJSON
+            OString sT = "JSDLGTRACE send jsontype="
+                + OUStringToOString(m_sTypeOfJSON, RTL_TEXTENCODING_UTF8)
                 + " msgType=" + OString::number(static_cast<int>(eType));
             emscripten_console_warn(sT.getStr());
         }
