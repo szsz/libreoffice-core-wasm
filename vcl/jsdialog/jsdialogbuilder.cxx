@@ -1003,6 +1003,10 @@ void JSDialog::response(int response)
         return;
     }
 
+#ifdef __EMSCRIPTEN__
+    emscripten_console_warn(OString("JSDLGTRACE response() resp="
+        + OString::number(response)).getStr());
+#endif
     sendClose();
     SalInstanceDialog::response(response);
 }
@@ -1031,6 +1035,15 @@ bool JSDialog::runAsync(std::shared_ptr<weld::DialogController> const& rxOwner,
 {
     bool ret = SalInstanceDialog::runAsync(rxOwner, rEndDialogFn);
     sendFullUpdate();
+#ifdef __EMSCRIPTEN__
+    // doc-switch fix attempt: flush the open synchronously. The FullUpdate
+    // is normally queued on a POST_PAINT idle; after switchdocument a
+    // premature sendClose() (which does clearQueue()) can wipe it before
+    // the idle fires, so the 2nd-doc dialog never opens. Flushing here
+    // delivers the open during runAsync, before any close can clear it.
+    emscripten_console_warn("JSDLGTRACE runAsync(owner) flush FullUpdate");
+    flush();
+#endif
     return ret;
 }
 
@@ -1039,6 +1052,10 @@ bool JSDialog::runAsync(std::shared_ptr<Dialog> const& rxSelf,
 {
     bool ret = SalInstanceDialog::runAsync(rxSelf, func);
     sendFullUpdate();
+#ifdef __EMSCRIPTEN__
+    emscripten_console_warn("JSDLGTRACE runAsync(self) flush FullUpdate");
+    flush();
+#endif
     return ret;
 }
 

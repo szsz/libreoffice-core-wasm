@@ -311,6 +311,9 @@ void JSDialogNotifyIdle::clearQueue() { m_aMessageQueue.clear(); }
 
 void JSDialogSender::ImplDestroy()
 {
+#ifdef __EMSCRIPTEN__
+    emscripten_console_warn("JSDLGTRACE ImplDestroy(dtor)->sendClose");
+#endif
     sendClose();
 
     if (mpIdleNotify)
