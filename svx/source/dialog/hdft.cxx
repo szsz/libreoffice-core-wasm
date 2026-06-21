@@ -34,6 +34,7 @@
 
 #include <svx/dlgutil.hxx>
 #include <sfx2/htmlmode.hxx>
+#include <comphelper/lok.hxx>
 #include <osl/diagnose.h>
 #include <tools/debug.hxx>
 #include <tools/mapunit.hxx>
@@ -478,7 +479,17 @@ void SvxHFPage::TurnOn(const weld::Toggleable* pBox)
     {
         bool bDelete = true;
 
-        if (!mbDisableQueryBox && pBox && m_xTurnOnBox->get_saved_state() == TRISTATE_TRUE)
+        // Skip the "really delete the header/footer?" confirmation under LOK.
+        // It is a synchronous modal weld dialog (aDlg.run()); in the headless
+        // LOK/WASM kit that run() cannot execute interactively and returns a
+        // non-RET_YES result, so bDelete became false and m_xTurnOnBox was
+        // re-ticked below — silently reverting the user's untick, leaving the
+        // header active. The header then survived the page-style Apply and was
+        // still written into the saved .docx (word/header1.xml +
+        // <w:headerReference>). The user explicitly unticked "Header on", so
+        // under LOK honour that directly without the confirmation prompt.
+        if (!mbDisableQueryBox && pBox && m_xTurnOnBox->get_saved_state() == TRISTATE_TRUE
+            && !comphelper::LibreOfficeKit::isActive())
         {
             short nResult;
             if (m_nId == SID_ATTR_PAGE_HEADERSET)
