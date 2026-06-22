@@ -59,20 +59,24 @@ endif
 # SpellOnline kicks in, Writer's autospell runs hunspell's word-check +
 # suggestion routines, which recurse deeply (ngram / compound-word paths).
 # That autospell work runs as IDLE processing on the *main* thread
-# (DocumentTimerManager::DoIdleJobs → SwTextFrame::AutoSpell_), and under
+# (DocumentTimerManager::DoIdleJobs → SwTextFrame::AutoSpell_). Under
 # -sPROXY_TO_PTHREAD (enabled by default, configure.ac) the app's main()
-# runs on the proxied-main pthread whose stack is governed by STACK_SIZE —
-# NOT DEFAULT_PTHREAD_STACK_SIZE. The previous 128 KiB STACK_SIZE overflowed
-# ("Stack cookie has been overwritten", unreachable) the moment a real
-# misspelling triggered hunspell suggestion recursion. This is exactly why
-# an earlier attempt to make the EMSCRIPTEN dict scan take precedence (LO
-# commit 64bb48e598bb / build -51) was reverted: it activated spellcheck for
-# the first time and tripped this overflow, cascading into 30+ test timeouts.
-# Raise STACK_SIZE to 4 MiB (main/proxied-main thread) for hunspell headroom;
-# also keep DEFAULT_PTHREAD_STACK_SIZE at 1 MiB so any osl-created worker
-# (which uses PTHREAD_ATTR_DEFAULT on emscripten) has headroom too. Cost is a
-# few MiB of reserved stack — negligible against the 1–2 GiB heap.
-gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=4194304 -sDEFAULT_PTHREAD_STACK_SIZE=1048576
+# runs on the proxied-main pthread — and EMPIRICALLY (builds -87/-88) that
+# thread's stack is governed by DEFAULT_PTHREAD_STACK_SIZE, NOT STACK_SIZE:
+#  - build -87 (DEFAULT 1 MiB)  → overflow at cookie addr ~0x03d8cfe0.
+#  - build -88 (STACK_SIZE 128K→4M, DEFAULT still 1 MiB) → SAME cookie addr,
+#    SAME overflow. Bumping STACK_SIZE did not move the proxied-main stack;
+#    bumping DEFAULT_PTHREAD_STACK_SIZE is what matters. 1 MiB still wasn't
+#    enough for hunspell suggestion recursion in WASM (larger frames than
+#    native). The overflow is caught by checkStackCookie at the
+#    Browser_mainLoop_runner boundary. This is the same overflow that forced
+#    the revert of the -51 dict-scan-precedence commit (64bb48e598bb).
+# Give both knobs desktop-parity 8 MiB (native LO main stack is 8 MiB, which
+# hunspell fits comfortably). Cost: 8 MiB per live pthread; with
+# PROXY_TO_PTHREAD there is no pre-allocated pool (PTHREAD_POOL_SIZE unset),
+# threads are created on demand, so total reserved stack stays modest vs the
+# 1–2 GiB heap.
+gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=8388608 -sDEFAULT_PTHREAD_STACK_SIZE=8388608
 
 # To keep the link time (and memory) down, prevent all rewriting options from wasm-emscripten-finalize
 # See emscripten.py, finalize_wasm, modify_wasm = True
