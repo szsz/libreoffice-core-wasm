@@ -55,20 +55,24 @@ ifeq ($(ENABLE_EMSCRIPTEN_PROXY_TO_PTHREAD),)
 gb_EMSCRIPTEN_LDFLAGS += -sPTHREAD_POOL_SIZE=6
 endif
 
-# Double the main thread stack size. Worker threads previously kept the
-# emscripten default of 64 KiB (DEFAULT_PTHREAD_STACK_SIZE) — too small once
-# spellcheck activates: hunspell's word-check + suggestion routines recurse
-# deeply (ngram / compound-word paths), and the autospell daemon runs on a
-# pooled pthread. With 64 KiB this overflowed the stack ("Stack cookie has
-# been overwritten", unreachable) the moment dictionaries registered and
-# SpellOnline kicked in — which is why an earlier attempt to make the
-# EMSCRIPTEN dict scan take precedence (LO commit 64bb48e598bb / build -51)
-# had to be reverted: it activated spellcheck for the first time and tripped
-# this overflow, cascading into 30+ test timeouts. Raise the worker stack to
-# 1 MiB so the spell daemon (and any future deep recursion on a worker) has
-# headroom. Cost is ~7 MiB reserved across the pthread pool — negligible
-# against the 1–2 GiB heap.
-gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=131072 -sDEFAULT_PTHREAD_STACK_SIZE=1048576
+# Stack sizes — sized for spellcheck. Once dictionaries register and
+# SpellOnline kicks in, Writer's autospell runs hunspell's word-check +
+# suggestion routines, which recurse deeply (ngram / compound-word paths).
+# That autospell work runs as IDLE processing on the *main* thread
+# (DocumentTimerManager::DoIdleJobs → SwTextFrame::AutoSpell_), and under
+# -sPROXY_TO_PTHREAD (enabled by default, configure.ac) the app's main()
+# runs on the proxied-main pthread whose stack is governed by STACK_SIZE —
+# NOT DEFAULT_PTHREAD_STACK_SIZE. The previous 128 KiB STACK_SIZE overflowed
+# ("Stack cookie has been overwritten", unreachable) the moment a real
+# misspelling triggered hunspell suggestion recursion. This is exactly why
+# an earlier attempt to make the EMSCRIPTEN dict scan take precedence (LO
+# commit 64bb48e598bb / build -51) was reverted: it activated spellcheck for
+# the first time and tripped this overflow, cascading into 30+ test timeouts.
+# Raise STACK_SIZE to 4 MiB (main/proxied-main thread) for hunspell headroom;
+# also keep DEFAULT_PTHREAD_STACK_SIZE at 1 MiB so any osl-created worker
+# (which uses PTHREAD_ATTR_DEFAULT on emscripten) has headroom too. Cost is a
+# few MiB of reserved stack — negligible against the 1–2 GiB heap.
+gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=4194304 -sDEFAULT_PTHREAD_STACK_SIZE=1048576
 
 # To keep the link time (and memory) down, prevent all rewriting options from wasm-emscripten-finalize
 # See emscripten.py, finalize_wasm, modify_wasm = True
