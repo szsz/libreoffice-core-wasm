@@ -55,8 +55,20 @@ ifeq ($(ENABLE_EMSCRIPTEN_PROXY_TO_PTHREAD),)
 gb_EMSCRIPTEN_LDFLAGS += -sPTHREAD_POOL_SIZE=7
 endif
 
-# Double the main thread stack size, but keep the default value for other threads:
-gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=131072 -sDEFAULT_PTHREAD_STACK_SIZE=65536
+# Double the main thread stack size. Worker threads previously kept the
+# emscripten default of 64 KiB (DEFAULT_PTHREAD_STACK_SIZE) — too small once
+# spellcheck activates: hunspell's word-check + suggestion routines recurse
+# deeply (ngram / compound-word paths), and the autospell daemon runs on a
+# pooled pthread. With 64 KiB this overflowed the stack ("Stack cookie has
+# been overwritten", unreachable) the moment dictionaries registered and
+# SpellOnline kicked in — which is why an earlier attempt to make the
+# EMSCRIPTEN dict scan take precedence (LO commit 64bb48e598bb / build -51)
+# had to be reverted: it activated spellcheck for the first time and tripped
+# this overflow, cascading into 30+ test timeouts. Raise the worker stack to
+# 1 MiB so the spell daemon (and any future deep recursion on a worker) has
+# headroom. Cost is ~7 MiB reserved across the pthread pool — negligible
+# against the 1–2 GiB heap.
+gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=131072 -sDEFAULT_PTHREAD_STACK_SIZE=1048576
 
 # To keep the link time (and memory) down, prevent all rewriting options from wasm-emscripten-finalize
 # See emscripten.py, finalize_wasm, modify_wasm = True
