@@ -78,6 +78,13 @@ endif
 # 1–2 GiB heap.
 gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=8388608 -sDEFAULT_PTHREAD_STACK_SIZE=8388608
 
+# DIAGNOSTIC (spellcheck overflow, build #4) — REVERT before shipping.
+# STACK_OVERFLOW_CHECK=2 aborts AT the overflowing call (not at the next
+# main-loop boundary) and prints the actual stack pointer vs limit, so we
+# learn the real stack size AND whether it's deep/infinite recursion.
+# --profiling-funcs keeps wasm function names so the trace is readable.
+gb_EMSCRIPTEN_LDFLAGS += -sSTACK_OVERFLOW_CHECK=2 --profiling-funcs
+
 # To keep the link time (and memory) down, prevent all rewriting options from wasm-emscripten-finalize
 # See emscripten.py, finalize_wasm, modify_wasm = True
 # So we need WASM_BIGINT=1 and ASSERTIONS=1 (2 implies STACK_OVERFLOW_CHECK)
