@@ -1336,6 +1336,14 @@ bool SwTextNode::Convert( SwConversionArgs &rArgs )
 // Note: this is a clone of SwTextNode::Spell, so keep them in sync when fixing things!
 SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
 {
+    // [diag spell-overflow] re-entrancy depth counter — REVERT before shipping.
+    static thread_local int s_asDepth = 0;
+    ++s_asDepth;
+    if (s_asDepth > 1)
+        fprintf(stderr, "lok-spell-ovf: AutoSpell_ RE-ENTRANT depth=%d node=%ld\n",
+                s_asDepth, static_cast<long>(rNode.GetIndex().get()));
+    struct AsDepthDec { int* p; ~AsDepthDec(){ --*p; } } _asDepthDec{ &s_asDepth };
+
     SwRect aRect;
     assert(sw::FrameContainsNode(*this, rNode.GetIndex()));
     SwTextNode *const pNode(&rNode);
@@ -1429,6 +1437,12 @@ SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
             {
                 // check for: bAlter => xHyphWord.is()
                 OSL_ENSURE(!bSpell || xSpell.is(), "NULL pointer");
+                // [diag spell-overflow] log word right before hunspell isValid —
+                // if the overflow is inside isValid for a specific word, this is
+                // the last line printed. REVERT before shipping.
+                fprintf(stderr, "lok-spell-ovf: isValid lang=%d depth=%d word='%s'\n",
+                        static_cast<int>(eActLang.get()), s_asDepth,
+                        OUStringToOString(rWord, RTL_TEXTENCODING_UTF8).getStr());
                 if( !xSpell->isValid( rWord, static_cast<sal_uInt16>(eActLang), Sequence< PropertyValue >() ) &&
                     // redlines can leave "in word" character within word,
                     // we must remove them before spell checking
