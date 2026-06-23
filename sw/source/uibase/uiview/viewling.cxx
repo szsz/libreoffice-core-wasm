@@ -25,6 +25,7 @@
 #include <com/sun/star/linguistic2/XLinguProperties.hpp>
 #include <com/sun/star/i18n/TextConversionOption.hpp>
 #include <comphelper/lok.hxx>
+#include <cstdio> // [diag spell-rclick] REVERT
 #include <comphelper/processfactory.hxx>
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/propertysequence.hxx>
@@ -588,6 +589,10 @@ bool SwView::ExecSpellPopup(const Point& rPt, bool bIsMouseEvent)
 {
     bool bRet = false;
     const SwViewOption* pVOpt = m_pWrtShell->GetViewOptions();
+    // [diag spell-rclick] REVERT — trace the gates that decide the spell menu.
+    fprintf(stderr, "lok-rclick: ExecSpellPopup enter onlineSpell=%d isSelection=%d lokActive=%d\n",
+            (int)pVOpt->IsOnlineSpell(), (int)m_pWrtShell->IsSelection(),
+            (int)comphelper::LibreOfficeKit::isActive());
     if( pVOpt->IsOnlineSpell() &&
         !m_pWrtShell->IsSelection())
     {
@@ -632,6 +637,8 @@ bool SwView::ExecSpellPopup(const Point& rPt, bool bIsMouseEvent)
             bool bUseGrammarContext = false;
             Reference<XSpellAlternatives> xAlt(
                 m_pWrtShell->GetCorrection(bIsMouseEvent ? &rPt : nullptr, aToFill));
+            fprintf(stderr, "lok-rclick: GetCorrection xAlt.is=%d alts=%d\n",
+                    (int)xAlt.is(), (int)(xAlt.is() ? xAlt->getAlternatives().getLength() : -1));
             ProofreadingResult aGrammarCheckRes;
             sal_Int32 nErrorInResult = -1;
             uno::Sequence< OUString > aSuggestions;
@@ -693,7 +700,10 @@ bool SwView::ExecSpellPopup(const Point& rPt, bool bIsMouseEvent)
                 OUString sMenuName = bUseGrammarContext ?
                     u"private:resource/GrammarContextMenu"_ustr : u"private:resource/SpellContextMenu"_ustr;
                 rtl::Reference<VCLXPopupMenu> xMenuInterface = xPopup->CreateMenuInterface();
-                if (TryContextMenuInterception(xMenuInterface, sMenuName, xMenu, aEvent))
+                bool bIntercept = TryContextMenuInterception(xMenuInterface, sMenuName, xMenu, aEvent);
+                fprintf(stderr, "lok-rclick: menu built; TryContextMenuInterception=%d xMenu.is=%d xMenuInterface.is=%d\n",
+                        (int)bIntercept, (int)xMenu.is(), (int)xMenuInterface.is());
+                if (bIntercept)
                 {
                     //! happy hacking for context menu modifying extensions of this
                     //! 'custom made' menu... *sigh* (code copied from sfx2 and framework)
@@ -740,10 +750,14 @@ bool SwView::ExecSpellPopup(const Point& rPt, bool bIsMouseEvent)
                     }
                     else
                     {
+                        fprintf(stderr, "lok-rclick: xMenu null branch; lokActive=%d currentVS=%d\n",
+                                (int)comphelper::LibreOfficeKit::isActive(),
+                                (int)(SfxViewShell::Current() != nullptr));
                         if (comphelper::LibreOfficeKit::isActive())
                         {
                             if (SfxViewShell* pViewShell = SfxViewShell::Current())
                             {
+                                fprintf(stderr, "lok-rclick: EMITTING LOK_CALLBACK_CONTEXT_MENU\n");
                                 boost::property_tree::ptree aMenu = SfxDispatcher::fillPopupMenu(xMenuInterface);
                                 boost::property_tree::ptree aRoot;
                                 aRoot.add_child("menu", aMenu);
