@@ -35,6 +35,12 @@
 #include <hunspell.hxx>
 #include "sspellimp.hxx"
 
+#ifdef EMSCRIPTEN
+// [diag spell-overflow] measure the spell thread's actual stack size — REVERT.
+#include <cstdio>
+#include <emscripten/stack.h>
+#endif
+
 #include <linguistic/misc.hxx>
 #include <linguistic/spelldta.hxx>
 #include <i18nlangtag/languagetag.hxx>
@@ -336,6 +342,24 @@ sal_Int16 SpellChecker::GetSpellFailure(const OUString &rWord, const Locale &rLo
                     return -1;
 
                 OString aWrd(OU2ENC(nWord,eEnc));
+#ifdef EMSCRIPTEN
+                // [diag spell-overflow] one-time: print the spell thread's stack
+                // base/end/total/free, to settle whether the overflow is a tiny
+                // stack (emscripten flag not applied) or unbounded recursion.
+                {
+                    static thread_local bool s_once = false;
+                    if (!s_once)
+                    {
+                        s_once = true;
+                        uintptr_t base = emscripten_stack_get_base();
+                        uintptr_t end  = emscripten_stack_get_end();
+                        fprintf(stderr, "lok-stack: spell-thread base=0x%zx end=0x%zx total=%zu free=%zu\n",
+                                static_cast<size_t>(base), static_cast<size_t>(end),
+                                static_cast<size_t>(base > end ? base - end : end - base),
+                                static_cast<size_t>(emscripten_stack_get_free()));
+                    }
+                }
+#endif
 #if defined(H_DEPRECATED)
                 bool bVal = pMS->spell(std::string(aWrd), &rInfo);
 #else
