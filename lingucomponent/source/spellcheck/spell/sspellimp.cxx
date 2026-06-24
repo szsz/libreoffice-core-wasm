@@ -21,6 +21,8 @@
 
 #include <com/sun/star/linguistic2/SpellFailure.hpp>
 #include <com/sun/star/linguistic2/XLinguProperties.hpp>
+#include <com/sun/star/linguistic2/LinguServiceEvent.hpp>
+#include <com/sun/star/linguistic2/LinguServiceEventFlags.hpp>
 #include <comphelper/lok.hxx>
 #include <comphelper/processfactory.hxx>
 #include <cppuhelper/supportsservice.hxx>
@@ -268,15 +270,12 @@ sal_Bool SAL_CALL SpellChecker::hasLocale(const Locale& rLocale)
     bool bRes = (std::ranges::find(m_aSuppLocales, rLocale) != m_aSuppLocales.end());
 
 #ifdef EMSCRIPTEN
-    fprintf(stderr, "lok-dicrescan: hasLocale(%s-%s) exact=%d lastFiles=%d\n", // [diag] REVERT
-            OUStringToOString(rLocale.Language, RTL_TEXTENCODING_UTF8).getStr(),
-            OUStringToOString(rLocale.Country, RTL_TEXTENCODING_UTF8).getStr(),
-            (int)bRes, (int)m_nWasmDictFiles);
     // The WASM dict-loader installs dictionaries into share/dict at runtime
     // (lazily, on first use of each document language). The locale list was
     // cached at first use, so before reporting a locale unsupported, re-scan
     // if new dictionary files have appeared since the last scan. The file-count
     // guard keeps genuinely-unsupported languages from re-scanning every word.
+    bool bRescanned = false;
     if (!bRes)
     {
         const sal_Int32 nFiles = lcl_CountWasmDictFiles();
@@ -286,6 +285,7 @@ sal_Bool SAL_CALL SpellChecker::hasLocale(const Locale& rLocale)
             m_DictItems.clear();
             m_aSuppLocales.realloc(0);
             getLocales();
+            bRescanned = true;
             bRes = (std::ranges::find(m_aSuppLocales, rLocale) != m_aSuppLocales.end());
         }
     }
@@ -306,6 +306,21 @@ sal_Bool SAL_CALL SpellChecker::hasLocale(const Locale& rLocale)
                 break;
             }
         }
+    }
+    // If a runtime re-scan just made this locale available, tell the linguistic
+    // framework to re-check the document: text that was scanned (and found
+    // "correct" because no dictionary was loaded for its language) before the
+    // dict-loader installed the dictionary is otherwise never re-spelled, so it
+    // shows no squiggles and offers no right-click suggestions. Firing
+    // SPELL_WRONG_WORDS_AGAIN routes through SwLinguServiceEventListener →
+    // SwModule::CheckSpellChanges, which invalidates the wrong-lists; the idle
+    // spell job then re-checks with the new dictionary. Fired once per newly
+    // installed language (the file-count guard prevents repeats).
+    if (bRes && bRescanned)
+    {
+        GetPropHelper().LaunchEvent(linguistic2::LinguServiceEvent(
+            GetPropHelper().GetEvtObj(),
+            linguistic2::LinguServiceEventFlags::SPELL_WRONG_WORDS_AGAIN));
     }
 #endif
 
