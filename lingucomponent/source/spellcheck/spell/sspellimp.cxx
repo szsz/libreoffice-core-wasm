@@ -283,6 +283,24 @@ sal_Bool SAL_CALL SpellChecker::hasLocale(const Locale& rLocale)
             bRes = lcl_isSupported(rLocale);
         }
     }
+    // Language-level fallback. The dict-loader installs dictionaries whose
+    // file-name-derived locale need not equal the document's: the German
+    // (Frami) files are de_DE_frami.dic → "de-DE-frami", and the French file is
+    // fr.dic → "fr", while documents use "de-DE" / "fr-FR". Accept any
+    // installed dictionary of the same language so those paragraphs get
+    // spell-checked (GetSpellFailure applies the same fallback when picking the
+    // hunspell dict).
+    if (!bRes && !rLocale.Language.isEmpty())
+    {
+        for (auto const& suppLocale : m_aSuppLocales)
+        {
+            if (rLocale.Language == suppLocale.Language)
+            {
+                bRes = true;
+                break;
+            }
+        }
+    }
 #endif
 
     return bRes;
@@ -336,7 +354,17 @@ sal_Int16 SpellChecker::GetSpellFailure(const OUString &rWord, const Locale &rLo
             pMS = nullptr;
             eEnc = RTL_TEXTENCODING_DONTKNOW;
 
-            if (rLocale == currDict.m_aDLoc)
+#if defined EMSCRIPTEN
+            // Match exact locale, else any dictionary of the same language (see
+            // hasLocale): the WASM dict-loader's file-name-derived locales
+            // ("de-DE-frami", "fr") need not equal the document's ("de-DE",
+            // "fr-FR").
+            const bool bLocaleMatch = (rLocale == currDict.m_aDLoc) ||
+                (!rLocale.Language.isEmpty() && rLocale.Language == currDict.m_aDLoc.Language);
+#else
+            const bool bLocaleMatch = (rLocale == currDict.m_aDLoc);
+#endif
+            if (bLocaleMatch)
             {
                 if (!currDict.m_pDict)
                 {
@@ -521,7 +549,14 @@ Reference< XSpellAlternatives >
             pMS = nullptr;
             eEnc = RTL_TEXTENCODING_DONTKNOW;
 
-            if (rLocale == currDict.m_aDLoc)
+#if defined EMSCRIPTEN
+            // exact locale, else same-language dict (see hasLocale/GetSpellFailure)
+            const bool bLocaleMatch = (rLocale == currDict.m_aDLoc) ||
+                (!rLocale.Language.isEmpty() && rLocale.Language == currDict.m_aDLoc.Language);
+#else
+            const bool bLocaleMatch = (rLocale == currDict.m_aDLoc);
+#endif
+            if (bLocaleMatch)
             {
                 pMS  = currDict.m_pDict.get();
                 eEnc = currDict.m_aDEnc;
