@@ -43,6 +43,9 @@
 #include <unotools/resmgr.hxx>
 #include <osl/diagnose.h>
 #include <osl/file.hxx>
+#ifdef EMSCRIPTEN
+#include <rtl/bootstrap.hxx>
+#endif
 #include <rtl/ustrbuf.hxx>
 #include <rtl/textenc.h>
 #include <sal/log.hxx>
@@ -224,22 +227,64 @@ Sequence< Locale > SAL_CALL SpellChecker::getLocales()
     return m_aSuppLocales;
 }
 
+#ifdef EMSCRIPTEN
+namespace {
+// Count the dictionary files currently present in the WASM dict directory.
+// The dict-loader installs dictionaries here at runtime (per document
+// language); a change in the file count means new dictionaries appeared.
+sal_Int32 lcl_CountWasmDictFiles()
+{
+    OUString aDir(u"$BRAND_BASE_DIR/share/dict"_ustr);
+    rtl::Bootstrap::expandMacros(aDir);
+    osl::Directory aDirectory(aDir);
+    if (aDirectory.open() != osl::FileBase::E_None)
+        return 0;
+    sal_Int32 nCount = 0;
+    osl::DirectoryItem aItem;
+    while (aDirectory.getNextItem(aItem) == osl::FileBase::E_None)
+        ++nCount;
+    aDirectory.close();
+    return nCount;
+}
+}
+#endif
+
 sal_Bool SAL_CALL SpellChecker::hasLocale(const Locale& rLocale)
 {
     MutexGuard  aGuard( GetLinguMutex() );
 
-    bool bRes = false;
     if (!m_aSuppLocales.hasElements())
         getLocales();
 
-    for (auto const& suppLocale : m_aSuppLocales)
+    auto lcl_isSupported = [this](const Locale& rLoc) -> bool {
+        for (auto const& suppLocale : m_aSuppLocales)
+            if (rLoc == suppLocale)
+                return true;
+        return false;
+    };
+
+    bool bRes = lcl_isSupported(rLocale);
+
+#ifdef EMSCRIPTEN
+    // The WASM dict-loader installs dictionaries into share/dict at runtime
+    // (lazily, on the first use of each document language). Our locale list was
+    // cached at first use, so before reporting a locale unsupported, re-scan if
+    // new dictionary files have appeared since the last scan. The file-count
+    // guard keeps genuinely-unsupported languages from re-scanning every word.
+    if (!bRes)
     {
-        if (rLocale == suppLocale)
+        const sal_Int32 nFiles = lcl_CountWasmDictFiles();
+        if (nFiles != m_nWasmDictFiles)
         {
-            bRes = true;
-            break;
+            m_nWasmDictFiles = nFiles;
+            m_DictItems.clear();
+            m_aSuppLocales.realloc(0);
+            getLocales();
+            bRes = lcl_isSupported(rLocale);
         }
     }
+#endif
+
     return bRes;
 }
 

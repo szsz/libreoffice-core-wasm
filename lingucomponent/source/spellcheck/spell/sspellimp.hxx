@@ -65,6 +65,12 @@ class SpellChecker :
     std::vector<DictItem> m_DictItems;
 
     Sequence< Locale >                 m_aSuppLocales;
+#if defined EMSCRIPTEN
+    // Number of dictionary files present at the last locale scan. The WASM
+    // dict-loader installs dictionaries at runtime (lazily, per document
+    // language), so hasLocale() re-scans when this count changes.
+    sal_Int32                          m_nWasmDictFiles = -1;
+#endif
 
     ::comphelper::OInterfaceContainerHelper3<XEventListener> m_aEvtListeners;
     std::unique_ptr<linguistic::PropertyHelper_Spelling> m_pPropHelper;
