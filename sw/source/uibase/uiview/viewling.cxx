@@ -74,6 +74,8 @@
 
 #include <vcl/svapp.hxx>
 #include <vcl/unohelp.hxx>
+#include <vcl/commandinfoprovider.hxx>
+#include <sfx2/viewsh.hxx>
 #include <rtl/ustring.hxx>
 
 #include <svtools/langtab.hxx>
@@ -711,6 +713,74 @@ bool SwView::ExecSpellPopup(const Point& rPt, bool bIsMouseEvent)
                 else
                 {
                     OSL_FAIL("text node expected but not found" );
+                }
+
+                // LOK/WASM: SwSpellPopup cannot be constructed here — its ctor
+                // calls SwModule::GetLanguageGuesser() → LanguageGuessing::create(),
+                // which faults in the headless WASM build (the libexttextcat
+                // service is unavailable), so the spelling context menu was never
+                // emitted and right-click offered no suggestions. For the spell
+                // case, build the context-menu JSON directly and send it via the
+                // LOK callback — mirrors EditView::LOKSendSpellPopupMenu. Works for
+                // every language (the suggestions come from whichever dictionary is
+                // loaded for the misspelled word). Grammar context (rare and
+                // inactive in WASM) still uses the legacy path below.
+                if (comphelper::LibreOfficeKit::isActive() && !bUseGrammarContext && xAlt.is())
+                {
+                    bRet = true;
+                    m_pWrtShell->SttSelect();
+                    if (SfxViewShell* pViewShell = SfxViewShell::Current())
+                    {
+                        uno::Reference<frame::XFrame> xMenuFrame = GetViewFrame().GetFrame().GetFrameInterface();
+                        OUString aModule(vcl::CommandInfoProvider::GetModuleIdentifier(xMenuFrame));
+
+                        boost::property_tree::ptree aMenu;
+                        boost::property_tree::ptree aItem;
+                        const uno::Sequence<OUString> aAlternatives(xAlt->getAlternatives());
+                        for (const OUString& rSugg : aAlternatives)
+                        {
+                            aItem.put("text", rSugg.toUtf8().getStr());
+                            aItem.put("type", "command");
+                            aItem.put("command", OUString(".uno:SpellCheckApplySuggestion?ApplyRule:string=Spelling_" + rSugg).toUtf8().getStr());
+                            aItem.put("enabled", true);
+                            aMenu.push_back(std::make_pair("", aItem));
+                            aItem.clear();
+                        }
+
+                        if (aAlternatives.hasElements())
+                        {
+                            aItem.put("type", "separator");
+                            aMenu.push_back(std::make_pair("", aItem));
+                            aItem.clear();
+                        }
+
+                        {
+                            auto aProps = vcl::CommandInfoProvider::GetCommandProperties(u".uno:SpellCheckIgnoreAll"_ustr, aModule);
+                            aItem.put("text", vcl::CommandInfoProvider::GetPopupLabelForCommand(aProps).toUtf8().getStr());
+                            aItem.put("type", "command");
+                            aItem.put("command", ".uno:SpellCheckIgnoreAll?Type:string=Spelling");
+                            aItem.put("enabled", true);
+                            aMenu.push_back(std::make_pair("", aItem));
+                            aItem.clear();
+                        }
+                        {
+                            auto aProps = vcl::CommandInfoProvider::GetCommandProperties(u".uno:SpellingAndGrammarDialog"_ustr, aModule);
+                            aItem.put("text", vcl::CommandInfoProvider::GetPopupLabelForCommand(aProps).toUtf8().getStr());
+                            aItem.put("type", "command");
+                            aItem.put("command", ".uno:SpellingAndGrammarDialog");
+                            aItem.put("enabled", true);
+                            aMenu.push_back(std::make_pair("", aItem));
+                            aItem.clear();
+                        }
+
+                        boost::property_tree::ptree aRoot;
+                        aRoot.add_child("menu", aMenu);
+                        std::stringstream aStream;
+                        boost::property_tree::write_json(aStream, aRoot, true);
+                        pViewShell->libreOfficeKitViewCallback(LOK_CALLBACK_CONTEXT_MENU, OString(aStream.str()));
+                    }
+                    m_pWrtShell->LockView( bOldViewLock );
+                    return bRet;
                 }
 
                 bRet = true;
