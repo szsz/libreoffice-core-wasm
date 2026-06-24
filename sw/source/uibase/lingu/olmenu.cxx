@@ -18,6 +18,7 @@
  */
 
 #include <SwRewriter.hxx>
+#include <cstdio> // [diag spell-rclick] REVERT
 #include <cmdid.h>
 #include <strings.hrc>
 #include <doc.hxx>
@@ -221,6 +222,7 @@ SwSpellPopup::SwSpellPopup(
     , m_bGrammarResults(false)
 {
     OSL_ENSURE(m_xSpellAlt.is(), "no spelling alternatives available");
+    fprintf(stderr, "lok-olmenu: ctor entry (spellmenu.ui loaded)\n"); // [diag] REVERT
 
     m_xPopupMenu->SetMenuFlags(MenuFlags::NoAutoMnemonics);
     bool bUseImagesInMenus = Application::GetSettings().GetStyleSettings().GetUseImagesInMenus();
@@ -295,14 +297,17 @@ SwSpellPopup::SwSpellPopup(
 
     m_xPopupMenu->EnableItem(m_nCorrectMenuId, bEnable);
 
+    fprintf(stderr, "lok-olmenu: after suggestions+cmdinfo\n"); // [diag] REVERT
     uno::Reference<linguistic2::XLanguageGuessing> xLG = SwModule::get()->GetLanguageGuesser();
     LanguageType nGuessLangWord = LANGUAGE_NONE;
     LanguageType nGuessLangPara = LANGUAGE_NONE;
+    fprintf(stderr, "lok-olmenu: languageGuesser.is=%d\n", (int)xLG.is()); // [diag] REVERT
     if (m_xSpellAlt.is() && xLG.is())
     {
         nGuessLangWord = EditView::CheckLanguage( m_xSpellAlt->getWord(), ::GetSpellChecker(), xLG, false );
         nGuessLangPara = EditView::CheckLanguage( rParaText, ::GetSpellChecker(), xLG, true );
     }
+    fprintf(stderr, "lok-olmenu: after CheckLanguage\n"); // [diag] REVERT
     if (nGuessLangWord != LANGUAGE_NONE || nGuessLangPara != LANGUAGE_NONE)
     {
         // make sure LANGUAGE_NONE gets not used as menu entry
@@ -408,13 +413,16 @@ SwSpellPopup::SwSpellPopup(
                                     aKeyboardLang,
                                     SvtLanguageTable::GetLanguageString(nGuessLangWord) };
 
+    fprintf(stderr, "lok-olmenu: after dict loop, before fillLangPopupMenu\n"); // [diag] REVERT
     pMenu = m_xPopupMenu->GetPopupMenu(m_nLangSelectionMenuId);
     fillLangPopupMenu( pMenu, MN_SET_LANGUAGE_SELECTION_START, aSeq, pWrtSh, m_aLangTable_Text );
     m_xPopupMenu->EnableItem(m_nLangSelectionMenuId);
+    fprintf(stderr, "lok-olmenu: after fillLangPopupMenu(selection)\n"); // [diag] REVERT
 
     pMenu = m_xPopupMenu->GetPopupMenu(m_nLangParaMenuId);
     fillLangPopupMenu( pMenu, MN_SET_LANGUAGE_PARAGRAPH_START, aSeq, pWrtSh, m_aLangTable_Paragraph );
     m_xPopupMenu->EnableItem(m_nLangParaMenuId);
+    fprintf(stderr, "lok-olmenu: after fillLangPopupMenu(para)\n"); // [diag] REVERT
 
     if (bUseImagesInMenus)
         m_xPopupMenu->SetItemImage(m_nSpellDialogId,
@@ -424,6 +432,7 @@ SwSpellPopup::SwSpellPopup(
     m_xPopupMenu->RemoveDisabledEntries( true );
 
     InitItemCommands(aSuggestions);
+    fprintf(stderr, "lok-olmenu: ctor DONE\n"); // [diag] REVERT
 }
 
 SwSpellPopup::SwSpellPopup(
