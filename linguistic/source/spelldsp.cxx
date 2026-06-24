@@ -184,8 +184,45 @@ Sequence< Locale > SAL_CALL SpellCheckerDispatcher::getLocales()
 sal_Bool SAL_CALL SpellCheckerDispatcher::hasLocale( const Locale& rLocale )
 {
     MutexGuard  aGuard( GetLinguMutex() );
-    SpellSvcByLangMap_t::const_iterator aIt( m_aSvcMap.find( LinguLocaleToLanguage( rLocale ) ) );
-    return aIt != m_aSvcMap.end();
+    if (m_aSvcMap.find( LinguLocaleToLanguage( rLocale ) ) != m_aSvcMap.end())
+        return true;
+
+#ifdef EMSCRIPTEN
+    // WASM: spell dictionaries are installed at runtime — the dict-loader
+    // fetches each document language on demand, *after* this language→service
+    // map was built (at start-up, from the then-present dictionaries). An
+    // already-loaded spell service may therefore now support a locale that was
+    // unknown then. Probe the instantiated services directly (which re-scan the
+    // dict directory); if one handles rLocale, register it so subsequent
+    // hasLocale()/isValid()/spell() route to it. Find the impl name first, then
+    // call SetServiceList — it mutates m_aSvcMap, so it must not run mid-scan.
+    OUString aFoundImpl;
+    for (const auto& rPair : m_aSvcMap)
+    {
+        const LangSvcEntries_Spell* pEntry = rPair.second.get();
+        if (!pEntry)
+            continue;
+        const sal_Int32 nRefs = pEntry->aSvcRefs.getLength();
+        const sal_Int32 nNames = pEntry->aSvcImplNames.getLength();
+        for (sal_Int32 i = 0; i < nRefs && i < nNames; ++i)
+        {
+            if (pEntry->aSvcRefs[i].is() && pEntry->aSvcRefs[i]->hasLocale(rLocale))
+            {
+                aFoundImpl = pEntry->aSvcImplNames[i];
+                break;
+            }
+        }
+        if (!aFoundImpl.isEmpty())
+            break;
+    }
+    if (!aFoundImpl.isEmpty())
+    {
+        SetServiceList( rLocale, { aFoundImpl } );
+        return true;
+    }
+#endif
+
+    return false;
 }
 
 
