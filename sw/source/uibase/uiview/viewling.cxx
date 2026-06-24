@@ -686,9 +686,12 @@ bool SwView::ExecSpellPopup(const Point& rPt, bool bIsMouseEvent)
 
                 bRet = true;
                 m_pWrtShell->SttSelect();
+                fprintf(stderr, "lok-rclick: paraText extracted len=%d; constructing SwSpellPopup grammar=%d\n",
+                        (int)aParaText.getLength(), (int)bUseGrammarContext); // [diag] REVERT
                 std::unique_ptr<SwSpellPopup> xPopup(bUseGrammarContext ?
                     new SwSpellPopup(m_pWrtShell.get(), aGrammarCheckRes, nErrorInResult, aSuggestions, aParaText) :
                     new SwSpellPopup(m_pWrtShell.get(), xAlt, aParaText));
+                fprintf(stderr, "lok-rclick: SwSpellPopup constructed OK\n"); // [diag] REVERT
                 ui::ContextMenuExecuteEvent aEvent;
                 const Point aPixPos = GetEditWin().LogicToPixel( rPt );
 
