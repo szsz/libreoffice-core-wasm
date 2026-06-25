@@ -610,7 +610,16 @@ bool SwView::ExecSpellPopup(const Point& rPt, bool bIsMouseEvent)
             // Spell-check in case the idle jobs haven't had a chance to kick in.
             // This makes it possible to suggest spelling corrections for
             // wrong words independent of the spell-checking idle job.
-            if (pNode && pNode->IsWrongDirty() &&
+            // Under LibreOfficeKit also force a re-check even when the node is
+            // not marked dirty: in the WASM build dictionaries are installed at
+            // runtime (the dict-loader fetches each document language on demand),
+            // so a paragraph scanned as "correct" before its dictionary loaded
+            // (no dict → not checked) would otherwise never be re-checked and
+            // would offer no suggestions on right-click. Re-running AutoSpell_
+            // here picks up the now-loaded dictionary (and, via hasLocale,
+            // triggers the document-wide re-spell + squiggles).
+            if (pNode &&
+                (pNode->IsWrongDirty() || comphelper::LibreOfficeKit::isActive()) &&
                 !pCursorShell->IsTableMode() &&
                 !pCursor->HasMark() && !pCursor->IsMultiSelection())
             {
