@@ -45,7 +45,6 @@
 #include <osl/file.hxx>
 #ifdef EMSCRIPTEN
 #include <rtl/bootstrap.hxx>
-#include <cstdio> // [diag spell-rescan] REVERT
 #endif
 #include <rtl/ustrbuf.hxx>
 #include <rtl/textenc.h>
@@ -239,20 +238,13 @@ sal_Int32 lcl_CountWasmDictFiles()
     OUString aDir(u"$BRAND_BASE_DIR/share/dict"_ustr);
     rtl::Bootstrap::expandMacros(aDir);
     osl::Directory aDirectory(aDir);
-    auto openRet = aDirectory.open();
-    if (openRet != osl::FileBase::E_None)
-    {
-        fprintf(stderr, "lok-dicrescan: count dir=\"%s\" openRet=%d -> 0\n", // [diag] REVERT
-                OUStringToOString(aDir, RTL_TEXTENCODING_UTF8).getStr(), (int)openRet);
+    if (aDirectory.open() != osl::FileBase::E_None)
         return 0;
-    }
     sal_Int32 nCount = 0;
     osl::DirectoryItem aItem;
     while (aDirectory.getNextItem(aItem) == osl::FileBase::E_None)
         ++nCount;
     aDirectory.close();
-    fprintf(stderr, "lok-dicrescan: count dir=\"%s\" -> %d files\n", // [diag] REVERT
-            OUStringToOString(aDir, RTL_TEXTENCODING_UTF8).getStr(), (int)nCount);
     return nCount;
 }
 }
