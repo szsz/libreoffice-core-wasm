@@ -21,8 +21,6 @@
 
 #include <com/sun/star/linguistic2/SpellFailure.hpp>
 #include <com/sun/star/linguistic2/XLinguProperties.hpp>
-#include <com/sun/star/linguistic2/LinguServiceEvent.hpp>
-#include <com/sun/star/linguistic2/LinguServiceEventFlags.hpp>
 #include <comphelper/lok.hxx>
 #include <comphelper/processfactory.hxx>
 #include <cppuhelper/supportsservice.hxx>
@@ -317,11 +315,7 @@ sal_Bool SAL_CALL SpellChecker::hasLocale(const Locale& rLocale)
     // spell job then re-checks with the new dictionary. Fired once per newly
     // installed language (the file-count guard prevents repeats).
     if (bRes && bRescanned)
-    {
-        GetPropHelper().LaunchEvent(linguistic2::LinguServiceEvent(
-            GetPropHelper().GetEvtObj(),
-            linguistic2::LinguServiceEventFlags::SPELL_WRONG_WORDS_AGAIN));
-    }
+        GetPropHelper().launchSpellWrongAgainEvent();
 #endif
 
     return bRes;
