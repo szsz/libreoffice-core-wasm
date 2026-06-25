@@ -798,6 +798,13 @@ bool PropertyHelper_Spelling::removeLinguServiceEventListener(
     return mxPropHelper->removeLinguServiceEventListener( rxListener );
 }
 
+void PropertyHelper_Spelling::launchSpellWrongAgainEvent()
+{
+    mxPropHelper->LaunchEvent( css::linguistic2::LinguServiceEvent(
+        mxPropHelper->GetEvtObj(),
+        css::linguistic2::LinguServiceEventFlags::SPELL_WRONG_WORDS_AGAIN ) );
+}
+
 }   // namespace linguistic
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

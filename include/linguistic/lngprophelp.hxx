@@ -229,6 +229,9 @@ public:
     /// @throws css::uno::RuntimeException
     bool removeLinguServiceEventListener(
                 const css::uno::Reference< css::linguistic2::XLinguServiceEventListener >& rxListener );
+    /// Broadcast SPELL_WRONG_WORDS_AGAIN to registered listeners so the
+    /// document re-spells (e.g. after a dictionary is installed at runtime).
+    void launchSpellWrongAgainEvent();
 };
 
 
