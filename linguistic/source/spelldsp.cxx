@@ -196,6 +196,24 @@ sal_Bool SAL_CALL SpellCheckerDispatcher::hasLocale( const Locale& rLocale )
     // dict directory); if one handles rLocale, register it so subsequent
     // hasLocale()/isValid()/spell() route to it. Find the impl name first, then
     // call SetServiceList — it mutates m_aSvcMap, so it must not run mid-scan.
+    //
+    // Guard the probe with a negative cache keyed on the current dict
+    // generation: probing iterates every loaded service, so without this a
+    // genuinely-unsupported locale (any word in a language we ship no
+    // dictionary for) would re-probe on every single spell query and make
+    // selection/typing lag. A dictionary install bumps the generation
+    // (linguistic::GetWasmDictGeneration), which flushes the cache so a newly
+    // installed language is re-probed exactly once.
+    const sal_Int32 nGen = linguistic::GetWasmDictGeneration();
+    if (nGen != m_nWasmProbeGen)
+    {
+        m_aWasmNegativeProbe.clear();
+        m_nWasmProbeGen = nGen;
+    }
+    const LanguageType nReqLang = LinguLocaleToLanguage( rLocale );
+    if (m_aWasmNegativeProbe.find( nReqLang ) != m_aWasmNegativeProbe.end())
+        return false;
+
     OUString aFoundImpl;
     for (const auto& rPair : m_aSvcMap)
     {
@@ -220,6 +238,10 @@ sal_Bool SAL_CALL SpellCheckerDispatcher::hasLocale( const Locale& rLocale )
         SetServiceList( rLocale, { aFoundImpl } );
         return true;
     }
+    // No loaded service handles this locale at the current generation.
+    // Remember it so we don't re-iterate the services until a dictionary
+    // installs and bumps the generation.
+    m_aWasmNegativeProbe.insert( nReqLang );
 #endif
 
     return false;
