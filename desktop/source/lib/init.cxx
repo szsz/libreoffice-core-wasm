@@ -59,6 +59,7 @@
 #include <algorithm>
 #include <memory>
 #include <iostream>
+#include <set>
 #include <string_view>
 
 #include <boost/property_tree/json_parser.hpp>
@@ -6681,6 +6682,35 @@ static char* getLanguages(const char* pCommand)
         addLocale(aValues, rLocale);
     for (css::lang::Locale const& rLocale : aGrammarLocales)
         addLocale(aValues, rLocale);
+#if defined EMSCRIPTEN
+    // WASM: spell dictionaries load lazily (one per document language, fetched
+    // on demand), so at this point xSpell->getLocales() only reports the
+    // start-up "primary" dictionary's locales — typically just English
+    // variants. The user could then never pick German/French/… to *trigger* a
+    // load. Offer the full language table instead: the names round-trip through
+    // SvtLanguageTable exactly like the installed ones (the Default_<name>
+    // command path resolves them), and selecting one sets the text language,
+    // which makes the client fetch that language's dictionary. The client
+    // narrows this list to the languages we actually ship dictionaries for.
+    {
+        std::set<LanguageType> aSeen;
+        for (css::lang::Locale const& rLocale : aLocales)
+            aSeen.insert(LanguageTag(rLocale).getLanguageType());
+        for (css::lang::Locale const& rLocale : aGrammarLocales)
+            aSeen.insert(LanguageTag(rLocale).getLanguageType());
+        const sal_uInt32 nCount = SvtLanguageTable::GetLanguageEntryCount();
+        for (sal_uInt32 i = 0; i < nCount; ++i)
+        {
+            const LanguageType nLang = SvtLanguageTable::GetLanguageTypeAtIndex(i);
+            if (nLang == LANGUAGE_DONTKNOW || nLang == LANGUAGE_NONE
+                || nLang == LANGUAGE_SYSTEM)
+                continue;
+            if (!aSeen.insert(nLang).second)
+                continue;
+            addLocale(aValues, LanguageTag(nLang).getLocale());
+        }
+    }
+#endif
     aTree.add_child("commandValues", aValues);
     std::stringstream aStream;
     boost::property_tree::write_json(aStream, aTree, false /* pretty */);
