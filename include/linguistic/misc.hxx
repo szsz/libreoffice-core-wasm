@@ -136,6 +136,16 @@ LNG_DLLPUBLIC CapType capitalType(const OUString&, CharClass const *);
 LNG_DLLPUBLIC bool      HasDigits( std::u16string_view rText );
 LNG_DLLPUBLIC bool      IsNumeric( std::u16string_view rText );
 
+#if defined EMSCRIPTEN
+// WASM lazy dictionary loading: the JS dict-loader installs hunspell
+// dictionaries into share/dict at runtime (per document language) and then
+// calls the exported C function lok_wasm_dict_installed(), which bumps an
+// internal generation counter returned here. Spell/hyphenation/thesaurus
+// services compare a cached copy against this value to know — with a single
+// integer compare, no per-word filesystem scan — when a new dictionary has
+// appeared and they must re-scan share/dict / invalidate negative caches.
+LNG_DLLPUBLIC sal_Int32 GetWasmDictGeneration();
+#endif
 
 LNG_DLLPUBLIC css::uno::Reference< css::linguistic2::XLinguProperties > GetLinguProperties();
 css::uno::Reference< css::linguistic2::XSearchableDictionaryList > GetDictionaryList();

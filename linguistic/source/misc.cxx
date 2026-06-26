@@ -47,6 +47,28 @@
 #include <linguistic/misc.hxx>
 #include <linguistic/hyphdta.hxx>
 
+#if defined EMSCRIPTEN
+#include <emscripten.h>
+
+namespace {
+// Bumped by the JS dict-loader (wasm/dict-loader.js) via the exported
+// lok_wasm_dict_installed() below, each time a hunspell dictionary is
+// installed into share/dict at runtime. Reading it is a single integer
+// load, so the spell hot path can check "did a dictionary just appear?"
+// without touching the (emscripten MEMFS) filesystem per word.
+sal_Int32 g_nWasmDictGeneration = 0;
+}
+
+// Exported to JS. wasm/dict-loader.js calls Module._lok_wasm_dict_installed()
+// after writing a dictionary's files into share/dict at runtime, so the
+// linguistic services know to re-scan exactly once per install instead of
+// polling the filesystem on every spell query.
+extern "C" EMSCRIPTEN_KEEPALIVE void lok_wasm_dict_installed()
+{
+    ++g_nWasmDictGeneration;
+}
+#endif
+
 using namespace osl;
 using namespace com::sun::star;
 using namespace com::sun::star::beans;
@@ -64,6 +86,13 @@ osl::Mutex & GetLinguMutex()
     static osl::Mutex SINGLETON;
     return SINGLETON;
 }
+
+#if defined EMSCRIPTEN
+sal_Int32 GetWasmDictGeneration()
+{
+    return g_nWasmDictGeneration;
+}
+#endif
 
 const LocaleDataWrapper & GetLocaleDataWrapper( LanguageType nLang )
 {
