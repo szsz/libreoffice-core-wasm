@@ -31,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <unotools/charclass.hxx>
 
 class LngSvcMgr;
@@ -47,6 +48,18 @@ class SpellCheckerDispatcher :
     typedef std::shared_ptr< LangSvcEntries_Spell >               LangSvcEntries_Spell_Ptr_t;
     typedef std::map< LanguageType, LangSvcEntries_Spell_Ptr_t >    SpellSvcByLangMap_t;
     SpellSvcByLangMap_t     m_aSvcMap;
+
+#if defined EMSCRIPTEN
+    // WASM: languages for which the runtime dictionary-probe in hasLocale()
+    // already failed at the current dict generation. Without this, every
+    // spell query for a genuinely-unsupported locale (any word in a language
+    // we ship no dictionary for) re-iterates every loaded spell service —
+    // which, before this cache, also hit the filesystem per word and made
+    // selection/typing visibly lag. Cleared when a new dictionary installs
+    // (dict generation advances).
+    std::set< LanguageType > m_aWasmNegativeProbe;
+    sal_Int32               m_nWasmProbeGen = -1;
+#endif
 
     css::uno::Reference< css::linguistic2::XLinguProperties >           m_xPropSet;
     css::uno::Reference< css::linguistic2::XSearchableDictionaryList >  m_xDicList;
