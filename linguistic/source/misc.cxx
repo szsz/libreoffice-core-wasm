@@ -66,6 +66,9 @@ sal_Int32 g_nWasmDictGeneration = 0;
 extern "C" EMSCRIPTEN_KEEPALIVE void lok_wasm_dict_installed()
 {
     ++g_nWasmDictGeneration;
+    // Re-check open documents now that a new dictionary is present, so text
+    // checked before it loaded (and thus showing no squiggles) gets squiggles.
+    linguistic::NotifyWasmDictInstalledRespell();
 }
 #endif
 
