@@ -826,9 +826,17 @@ bool PropertyHelper_Spelling::removeLinguServiceEventListener(
 
 void PropertyHelper_Spelling::launchSpellWrongAgainEvent()
 {
+    // Fire BOTH flags. SPELL_WRONG_WORDS_AGAIN re-checks words already flagged
+    // wrong; SPELL_CORRECT_WORDS_AGAIN re-checks words currently considered
+    // *correct*. The latter is essential when a dictionary is installed at
+    // runtime: text spell-checked before the dictionary loaded was recorded as
+    // correct (clean), so only re-checking correct words (→ bIsSpellAll →
+    // SpellItAgainSam re-spells everything) makes its squiggles appear. With
+    // only SPELL_WRONG_WORDS_AGAIN the empty wrong-list has nothing to re-check.
     mxPropHelper->LaunchEvent( css::linguistic2::LinguServiceEvent(
         mxPropHelper->GetEvtObj(),
-        css::linguistic2::LinguServiceEventFlags::SPELL_WRONG_WORDS_AGAIN ) );
+        css::linguistic2::LinguServiceEventFlags::SPELL_WRONG_WORDS_AGAIN
+        | css::linguistic2::LinguServiceEventFlags::SPELL_CORRECT_WORDS_AGAIN ) );
 }
 
 }   // namespace linguistic
