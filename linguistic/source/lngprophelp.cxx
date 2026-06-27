@@ -20,6 +20,7 @@
 
 #include <tools/debug.hxx>
 #include <sal/log.hxx>
+#include <set>
 
 #include <com/sun/star/linguistic2/LinguServiceEvent.hpp>
 #include <com/sun/star/linguistic2/LinguServiceEventFlags.hpp>
@@ -754,15 +755,40 @@ bool PropertyHelper_Hyphenation::removeLinguServiceEventListener(
     return mxPropHelper->removeLinguServiceEventListener( rxListener );
 }
 
+#if defined EMSCRIPTEN
+namespace {
+// Live spell PropertyHelpers, so a runtime dictionary install can ask each to
+// broadcast SPELL_WRONG_WORDS_AGAIN. Touched only on the main thread.
+std::set<PropertyHelper_Spelling*> & lcl_LiveSpellHelpers()
+{
+    static std::set<PropertyHelper_Spelling*> aSet;
+    return aSet;
+}
+}
+
+void NotifyWasmDictInstalledRespell()
+{
+    osl::MutexGuard aGuard( GetLinguMutex() );
+    for (PropertyHelper_Spelling* p : lcl_LiveSpellHelpers())
+        p->launchSpellWrongAgainEvent();
+}
+#endif
+
 PropertyHelper_Spelling::PropertyHelper_Spelling(
             const css::uno::Reference< css::uno::XInterface > &rxSource,
             css::uno::Reference< css::linguistic2::XLinguProperties > const &rxPropSet )
 {
     mxPropHelper = new PropertyHelper_Spell( rxSource, rxPropSet );
+#if defined EMSCRIPTEN
+    lcl_LiveSpellHelpers().insert( this );
+#endif
 }
 
 PropertyHelper_Spelling::~PropertyHelper_Spelling()
 {
+#if defined EMSCRIPTEN
+    lcl_LiveSpellHelpers().erase( this );
+#endif
 }
 
 void PropertyHelper_Spelling::AddAsPropListener()

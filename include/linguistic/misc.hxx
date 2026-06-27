@@ -147,6 +147,15 @@ LNG_DLLPUBLIC bool      IsNumeric( std::u16string_view rText );
 // integer compare, no per-word filesystem scan — when a new dictionary has
 // appeared and they must re-scan share/dict / invalidate negative caches.
 LNG_DLLPUBLIC sal_Int32 GetWasmDictGeneration();
+
+// Fire SPELL_WRONG_WORDS_AGAIN from every live spell PropertyHelper so all open
+// documents re-check (invalidate their wrong-lists) after a dictionary is
+// installed at runtime — the WASM analogue of installing a dictionary extension
+// on desktop. Called from lok_wasm_dict_installed(). Without it, text that was
+// spell-checked before its dictionary finished loading (e.g. right after
+// switching a paragraph to Spanish) stays "clean" and shows no squiggles,
+// because nothing re-examines it once the dictionary arrives.
+LNG_DLLPUBLIC void NotifyWasmDictInstalledRespell();
 #endif
 
 LNG_DLLPUBLIC css::uno::Reference< css::linguistic2::XLinguProperties > GetLinguProperties();
