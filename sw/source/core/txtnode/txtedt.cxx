@@ -1339,6 +1339,11 @@ SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
     SwRect aRect;
     assert(sw::FrameContainsNode(*this, rNode.GetIndex()));
     SwTextNode *const pNode(&rNode);
+#if defined EMSCRIPTEN
+    fprintf(stderr, "diag-autospell ENTER node=%ld nActPos=%d len=%d wrongDirty=%d\n",
+            (long)rNode.GetIndex().get(), (int)nActPos,
+            (int)pNode->GetText().getLength(), (int)pNode->IsWrongDirty());
+#endif
     if (!nActPos)
         nActPos = COMPLETE_STRING;
 
@@ -1547,6 +1552,12 @@ SwRect SwTextFrame::AutoSpell_(SwTextNode & rNode, sal_Int32 nActPos)
     if( bAddAutoCmpl )
         pNode->SetAutoCompleteWordDirty( false );
 
+#if defined EMSCRIPTEN
+    fprintf(stderr, "diag-autospell DONE  node=%ld wrongCount=%d rectEmpty=%d\n",
+            (long)rNode.GetIndex().get(),
+            pNode->GetWrong() ? (int)pNode->GetWrong()->Count() : -1,
+            (int)aRect.IsEmpty());
+#endif
     return aRect;
 }
 
