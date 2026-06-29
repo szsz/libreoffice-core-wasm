@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <cstdio>
 #include <vcl/themecolors.hxx>
 #include <officecfg/Office/Common.hxx>
 #include <config_wasm_strip.h>
@@ -663,6 +664,14 @@ void SwViewShell::FlushPendingLOKInvalidateTiles()
         rects.insert( rects.end(), tmpRects.begin(), tmpRects.end());
     }
     rects.Compress( SwRegionRects::CompressFuzzy );
+#if defined EMSCRIPTEN
+    {
+        int nWin = 0, nNoWin = 0;
+        for(SwViewShell& rSh : GetRingContainer()) { if (rSh.GetWin()) ++nWin; else ++nNoWin; }
+        fprintf(stderr, "diag-flush rects=%d shellsWithWin=%d shellsNoWin=%d\n",
+                (int)rects.size(), nWin, nNoWin);
+    }
+#endif
     if(rects.empty())
         return;
     // This is basically the loop from SwViewShell::InvalidateWindows().

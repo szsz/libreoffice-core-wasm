@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <cstdio>
 #include <config_wasm_strip.h>
 
 #include <rootfrm.hxx>
@@ -168,6 +169,10 @@ bool SwViewShellImp::AddPaintRect( const SwRect &rRect )
 void SwViewShellImp::AddPendingLOKInvalidation( const SwRect& rRect )
 {
     std::vector<SwRect>& l = m_pendingLOKInvalidations;
+#if defined EMSCRIPTEN
+    fprintf(stderr, "diag-addpending listEmpty=%d hasSfxViewShell=%d\n",
+            (int)l.empty(), (int)(m_rShell.GetSfxViewShell() != nullptr));
+#endif
     if(l.empty() && m_rShell.GetSfxViewShell()) // Announce that these invalidations will need flushing.
         m_rShell.GetSfxViewShell()->libreOfficeKitViewAddPendingInvalidateTiles();
     // These are often repeated, so check first for duplicates.

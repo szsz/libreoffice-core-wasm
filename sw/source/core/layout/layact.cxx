@@ -2172,7 +2172,18 @@ bool SwLayIdle::DoIdleJob_( const SwContentFrame *pCnt, IdleJobType eJob )
                 // PENDING should stop idle spell checking
                 m_bPageValid = m_bPageValid && (sw::WrongState::TODO != pTextNode->GetWrongDirty());
                 if ( aRepaint.HasArea() )
+                {
                     m_pImp->GetShell().InvalidateWindows( aRepaint );
+#if defined EMSCRIPTEN
+                    // Candidate fix: the timer-driven flush of pending LOK tile
+                    // invalidations does not reliably fire after the idle spell
+                    // pass on doc-open, so squiggles for pre-existing text never
+                    // repaint until an edit. Flush immediately so the client
+                    // re-fetches the tile and the squiggle appears.
+                    if (comphelper::LibreOfficeKit::isActive())
+                        m_pImp->GetShell().FlushPendingLOKInvalidateTiles();
+#endif
+                }
                 if (Application::AnyInput(VCL_INPUT_ANY & VclInputFlags(~VclInputFlags::TIMER)))
                     return true;
                 break;
