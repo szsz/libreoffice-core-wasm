@@ -1013,6 +1013,11 @@ IMPL_LINK(StyleList, EnableTreeDrag, bool, m_bEnable, void)
     m_bTreeDrag = m_bEnable;
 }
 
+// task #193: forward-declared — defined later in the file; FillHierarchicalTreeView
+// (below) caches the localised DisplayName before the definition is reached.
+static OUString lcl_GetLocalisedStyleName(SfxObjectShell* pObjShell, SfxStyleFamily eFam,
+                                          const OUString& sInternalName);
+
 void StyleList::FillHierarchicalTreeView(bool bExpandRootParents)
 {
     assert(m_xTreeBox && "FillHierarchicalTreeView() without treebox");
@@ -1312,8 +1317,10 @@ void StyleList::FillFlatTreeView()
             else if (aStyleSheetSet.insert(std::pair(pStyle->GetName(), pStyle->GetParent()))
                          .second)
             {
-                aStyles.emplace_back(pStyle->GetName(), pStyle->GetParent(),
-                                     pStyle->GetSpotlightId());
+                // task #193: cache the localised DisplayName (2nd ctor arg).
+                aStyles.emplace_back(pStyle->GetName(),
+                                     lcl_GetLocalisedStyleName(m_pCurObjShell, eFam, pStyle->GetName()),
+                                     pStyle->GetParent(), pStyle->GetSpotlightId());
             }
             pStyle = m_pStyleSheetPool->Next();
         }
