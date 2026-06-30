@@ -30,7 +30,7 @@ RUN set -eux; \
     apt-get update -qq; \
     apt-get install -y -qq --no-install-recommends \
         gcc-13 g++-13 \
-        zstd jq python3 patch \
+        zstd jq python3 python3-dev patch \
         ca-certificates curl gnupg lsb-release; \
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100; \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100; \
