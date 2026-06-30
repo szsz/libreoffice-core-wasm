@@ -1377,7 +1377,7 @@ void StyleList::FillFlatTreeView()
                 else
                 {
                     m_xFmtLb->set_id(rIter, rName);
-                    m_xFmtLb->set_text(rIter, rName);
+                    m_xFmtLb->set_text(rIter, aStyles[nIdx].getDisplayName());
                 }
                 if (pChildStyle && pChildStyle->IsHidden())
                     m_xFmtLb->set_font_color(
@@ -1392,9 +1392,9 @@ void StyleList::FillFlatTreeView()
             [this, &aStyles, eFam](weld::TreeIter& rIter, int nIdx) {
                 const OUString& rName = aStyles[nIdx].getName();
                 m_xFmtLb->set_id(rIter, rName);
-                m_xFmtLb->set_text(rIter, rName);
+                m_xFmtLb->set_text(rIter, aStyles[nIdx].getDisplayName());
                 m_xFmtLb->set_id(rIter, rName);
-                m_xFmtLb->set_text(rIter, rName);
+                m_xFmtLb->set_text(rIter, aStyles[nIdx].getDisplayName());
                 auto pStyle = m_pStyleSheetPool->Find(rName, eFam);
                 if (pStyle && pStyle->IsHidden())
                     m_xFmtLb->set_font_color(
