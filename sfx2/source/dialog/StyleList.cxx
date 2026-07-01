@@ -1345,7 +1345,7 @@ void StyleList::UpdateStyles(StyleFlags nFlags)
                     // task #193: id stays language-invariant, text uses
                     // cached localised DisplayName (see lcl_GetLocalisedStyleName).
                     m_xFmtLb->set_id(rIter, rName);
-                    m_xFmtLb->set_text(rIter, aStyles[nIdx].getDisplayName());
+                    m_xFmtLb->set_text(rIter, aStyles[nIdx].getName());
                 }
             },
             nullptr, nullptr, /*bGoingToSetText*/ true);
@@ -1358,7 +1358,7 @@ void StyleList::UpdateStyles(StyleFlags nFlags)
                                            // task #193: id language-invariant, text localised.
                                            m_xFmtLb->set_id(rIter, rName);
                                            m_xFmtLb->set_text(rIter,
-                                                              aStyles[nIdx].getDisplayName());
+                                                              aStyles[nIdx].getName());
                                        },
                                        nullptr, nullptr, /*bGoingToSetText*/ true);
     }
