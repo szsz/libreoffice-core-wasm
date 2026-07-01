@@ -20,16 +20,22 @@ FROM public.ecr.aws/allotropia/libo-builders/wasm:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# gcc-12 default, node 24, jq/zstd/python3 (orchestration), azure-cli (upload),
-# patch (POCO patches).
+# gcc-13 (LibreOffice master requires >= GCC 13 for the build side since
+# ~2026-05; the old snapshot built with gcc-12). node 24, jq/zstd/python3
+# (orchestration), azure-cli (upload), patch (POCO patches).
 RUN set -eux; \
     apt-get update -qq; \
+    apt-get install -y -qq --no-install-recommends software-properties-common; \
+    add-apt-repository -y ppa:ubuntu-toolchain-r/test || true; \
+    add-apt-repository -y ppa:deadsnakes/ppa || true; \
+    apt-get update -qq; \
     apt-get install -y -qq --no-install-recommends \
-        gcc-12 g++-12 \
-        zstd jq python3 patch \
+        gcc-13 g++-13 \
+        python3.11 python3.11-dev python3.11-venv \
+        zstd jq python3 python3-dev patch \
         ca-certificates curl gnupg lsb-release; \
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100; \
-    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100; \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100; \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100; \
     apt-get remove -y -qq libnode-dev || true; \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash -; \
     apt-get install -y -qq nodejs; \
@@ -41,6 +47,11 @@ RUN set -eux; \
     apt-get update -qq; \
     apt-get install -y -qq azure-cli; \
     rm -rf /var/lib/apt/lists/*
+
+# LO master requires Python >= 3.11 for the (native) BUILD side; the distro
+# python3 stays 3.10 for apt/azure-cli. Point LO's cross-build at python3.11.
+ENV PYTHON=/usr/bin/python3.11 \
+    PYTHON_FOR_BUILD=/usr/bin/python3.11
 
 # emsdk layout fix — bake the symlink so the runtime path is silent.
 RUN if [ ! -d /home/builder/emsdk/upstream ]; then \
