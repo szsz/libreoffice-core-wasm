@@ -148,8 +148,8 @@ docker exec "$CI_CONTAINER" bash -lc '
         echo "--- Configuring LibreOffice Core (first run / Makefile missing) ---"
         mkdir -p /lo/core-build
         cd /lo/core-build
-        # Collabora's co-25.04 configure doesn't have szsz's --with-wasm-module
-        # option; its LibreOfficeWASM32 distro-config selects the WASM modules.
+        # Collabora co-25.04 configure lacks the szsz --with-wasm-module flag;
+        # the LibreOfficeWASM32 distro-config selects the WASM modules instead.
         /lo/core/autogen.sh --with-distro=LibreOfficeWASM32
     fi
 
