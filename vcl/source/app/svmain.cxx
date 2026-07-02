@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <cstdio>
 #include <sal/config.h>
 #include <sal/log.hxx>
 
@@ -194,7 +195,21 @@ int ImplSVMain()
     SAL_WARN_IF( !pSVData->mpApp, "vcl", "no instance of class Application" );
 
     if ( IsVCLInit() )
+#ifdef __EMSCRIPTEN__
+    {
+        // WASM two-pass startup: Desktop::Main #1 (from lo_startmain during
+        // lok_init) initializes VCL and returns early (g_wasmSkipExecute) so
+        // lo_initialize's WaitForReady can unblock; pass #2 (soffice_main from
+        // lo_runLoop) arrives here with VCL already initialized and must run
+        // the application main (Desktop::Main -> Execute -> main loop) rather
+        // than short-circuit — otherwise LOK's runLoop returns immediately and
+        // the poll callback is never pumped.
+        fprintf(stderr, "LODIAG: ImplSVMain pass #2 (VCL already init) -> SVMainRun\n"); fflush(stderr);
+        return GetSalInstance()->SVMainRun();
+    }
+#else
         return EXIT_SUCCESS;
+#endif
 
 #if !defined(_WIN32) && !defined(SYSTEM_OPENSSL)
     static constexpr OUString name(u"SSL_CERT_FILE"_ustr);
