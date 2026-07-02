@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <cstdio>
 #include <config_features.h>
 #include <config_version.h>
 
@@ -352,7 +353,12 @@ void Application::Execute()
     pSVData->maAppData.mbAppQuit = false;
 
     int nExitCode = 0;
-    if (!pSVData->mpDefInst->DoExecute(nExitCode))
+    fprintf(stderr, "LODIAG: Application::Execute calling DoExecute (IsUseSystemEventLoop=%d)\n",
+            (int)Application::IsUseSystemEventLoop()); fflush(stderr);
+    bool bDoExecOmitted = !pSVData->mpDefInst->DoExecute(nExitCode);
+    fprintf(stderr, "LODIAG: DoExecute returned (omitted=%d) — control back in Application::Execute\n",
+            (int)bDoExecOmitted); fflush(stderr);
+    if (bDoExecOmitted)
     {
         if (Application::IsUseSystemEventLoop())
         {

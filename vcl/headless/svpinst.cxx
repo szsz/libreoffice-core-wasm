@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <cstdio>
 #include <sal/config.h>
 
 #include <mutex>
@@ -301,18 +302,25 @@ void SvpSalInstance::ProcessEvent( SalUserEvent aEvent )
 #if defined __EMSCRIPTEN__
 
 static void loop(void * arg) {
+    static int s_loopN = 0;
+    if (s_loopN < 6) { fprintf(stderr, "LODIAG: loop() callback fired #%d\n", s_loopN); fflush(stderr); }
+    ++s_loopN;
     SolarMutexGuard g;
     static_cast<SvpSalInstance *>(arg)->ImplYield(comphelper::LibreOfficeKit::isActive(), false);
 }
 
 bool SvpSalInstance::DoExecute(int &) {
+    fprintf(stderr, "LODIAG: SvpSalInstance::DoExecute entry isUnipoll=%d IsUseSystemEventLoop=%d\n",
+            (int)vcl::lok::isUnipoll(), (int)Application::IsUseSystemEventLoop()); fflush(stderr);
     assert(Application::IsUseSystemEventLoop());
     // emscripten_set_main_loop will unwind the stack by throwing a JavaScript exception, so we need
     // to manually undo the call of AcquireYieldMutex() done in InitVCL:
     ReleaseYieldMutex(false);
     // Somewhat randomly use an fps=100 argument so the loop callback is called 100 times per
     // second:
+    fprintf(stderr, "LODIAG: about to emscripten_set_main_loop_arg(simulate_infinite_loop=1)\n"); fflush(stderr);
     emscripten_set_main_loop_arg(loop, this, 100, 1);
+    fprintf(stderr, "LODIAG: emscripten_set_main_loop_arg RETURNED — unwind FAILED\n"); fflush(stderr);
     O3TL_UNREACHABLE;
 }
 
