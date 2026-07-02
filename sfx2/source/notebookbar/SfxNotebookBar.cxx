@@ -140,6 +140,14 @@ static void lcl_setNotebookbarFileName( vcl::EnumContext::Application eApp, cons
 
 static OUString lcl_getNotebookbarFileName( vcl::EnumContext::Application eApp )
 {
+    // Online/LOK always uses the COOL-specific notebookbar definition
+    // (ported from the Collabora lineage): the desktop notebookbar.ui
+    // hosts its widgets in containers the COOL client cannot lay out —
+    // e.g. the Home tab's fontsizecombobox arrives in the JSDialog
+    // model but is never materialized in the DOM.
+    if (comphelper::LibreOfficeKit::isActive())
+        return u"notebookbar_online.ui"_ustr;
+
     switch ( eApp )
     {
         case vcl::EnumContext::Application::Writer:
