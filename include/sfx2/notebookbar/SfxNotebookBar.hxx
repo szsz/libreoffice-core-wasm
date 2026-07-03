@@ -70,6 +70,10 @@ public:
 private:
     static bool m_bLock;
     static bool m_bHide;
+
+    static void ResetActiveToolbarModeToDefault(vcl::EnumContext::Application eApp);
+
+    DECL_DLLPRIVATE_STATIC_LINK(SfxNotebookBar, VclDisposeHdl, const SfxViewShell*, void);
 };
 
 } // namespace sfx2
